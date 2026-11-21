@@ -1,0 +1,166 @@
+{
+  "checked_at": "2026-11-08T14:31:57+08:00",
+  "quotes": [
+    {
+      "symbol": "m2709",
+      "quotes": [
+        {
+          "source": "sina",
+          "label": "新浪期货",
+          "symbol": "m2709",
+          "name": "豆粕2709",
+          "price": 2904.0,
+          "quote_at": "2026-11-06T23:00:00+08:00",
+          "received_at": "2026-11-08T14:31:39+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "M2709",
+          "open": 2904.0,
+          "high": 2911.0,
+          "low": 2901.0,
+          "previous_close": null,
+          "previous_settlement": 2907.0,
+          "bid": 2903.0,
+          "ask": 2905.0,
+          "open_interest": 269599.0,
+          "volume": 8043.0,
+          "latency_ms": 4770
+        },
+        {
+          "source": "eastmoney",
+          "label": "东方财富",
+          "symbol": "m2709",
+          "name": "豆粕2709",
+          "price": 2904.0,
+          "quote_at": "2026-11-06T23:00:00+08:00",
+          "received_at": "2026-11-08T14:31:50+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "114.m2709",
+          "open": 2904.0,
+          "high": 2911.0,
+          "low": 2901.0,
+          "previous_close": 2903.0,
+          "volume": 8043.0,
+          "amount": 233667250.0,
+          "latency_ms": 15840
+        }
+      ]
+    },
+    {
+      "symbol": "sa2701",
+      "quotes": [
+        {
+          "source": "sina",
+          "label": "新浪期货",
+          "symbol": "sa2701",
+          "name": "纯碱2701",
+          "price": 992.0,
+          "quote_at": "2026-11-06T23:00:00+08:00",
+          "received_at": "2026-11-08T14:31:40+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "SA2701",
+          "open": 959.0,
+          "high": 997.0,
+          "low": 959.0,
+          "previous_close": null,
+          "previous_settlement": 974.0,
+          "bid": 992.0,
+          "ask": 993.0,
+          "open_interest": 1164898.0,
+          "volume": 1332895.0,
+          "latency_ms": 5529
+        },
+        {
+          "source": "eastmoney",
+          "label": "东方财富",
+          "symbol": "sa2701",
+          "name": "纯碱701",
+          "price": 992.0,
+          "quote_at": "2026-11-06T23:00:00+08:00",
+          "received_at": "2026-11-08T14:31:50+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "115.SA701",
+          "open": 959.0,
+          "high": 997.0,
+          "low": 959.0,
+          "previous_close": 961.0,
+          "volume": 1332895.0,
+          "amount": 26151399900.0,
+          "latency_ms": 15489
+        }
+      ]
+    },
+    {
+      "symbol": "if2611",
+      "quotes": [
+        {
+          "source": "sina",
+          "label": "新浪期货",
+          "symbol": "if2611",
+          "name": "沪深300指数期货2611",
+          "price": 4039.6,
+          "quote_at": "2026-11-06T15:00:00+08:00",
+          "received_at": "2026-11-08T14:31:40+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "IF2611",
+          "open": 4022.0,
+          "high": 4067.2,
+          "low": 4022.0,
+          "volume": 26990.0,
+          "amount": 109231747.0,
+          "open_interest": 50123.0,
+          "previous_close": 4113.0,
+          "previous_settlement": 4099.8,
+          "bid": 4038.4,
+          "ask": 4039.6,
+          "latency_ms": 5361
+        },
+        {
+          "source": "eastmoney",
+          "label": "东方财富",
+          "symbol": "if2611",
+          "name": "沪深2611",
+          "price": 4039.6,
+          "quote_at": "2026-11-06T15:27:21+08:00",
+          "received_at": "2026-11-08T14:31:51+08:00",
+          "ok": true,
+          "error": "",
+          "raw_code": "220.IF2611",
+          "open": 4022.0,
+          "high": 4067.2,
+          "low": 4022.0,
+          "previous_close": 4113.0,
+          "volume": 26990.0,
+          "amount": 32769524100.0,
+          "latency_ms": 16221
+        }
+      ]
+    }
+  ],
+  "history": {
+    "ok": true,
+    "rows": 33,
+    "first": {
+      "time": "2026-09-15",
+      "price": 3098.0,
+      "open": 3102.0,
+      "high": 3108.0,
+      "low": 3082.0,
+      "volume": 4792.0,
+      "source": "eastmoney"
+    },
+    "last": {
+      "time": "2026-11-06",
+      "price": 2903.0,
+      "open": 2906.0,
+      "high": 2923.0,
+      "low": 2894.0,
+      "volume": 47252.0,
+      "source": "eastmoney"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('futures_dashboard_theme')||'dark';}catch(e){}</script>
+  <link rel="icon" href="{{ url_for('static', filename='login.webp') }}" type="image/webp">
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal.css') }}">
+  <script defer src="{{ url_for('static', filename='portal.js') }}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="topbar-brand" href="{{ url_for('status') }}" aria-label="闲云期货首页" style="color:inherit;text-decoration:none">
+      <img class="topbar-logo" src="{{ url_for('static', filename='login.webp') }}" alt="" width="46" height="46">
+      <div class="topbar-brand-title"><h1>{{ app_name }}</h1></div>
+    </a>
+    <div class="topbar-right">
+      {# Compatibility with standalone template tests that do not supply portal context. #}
+      {% set backup_indicator = backup_indicator|default({'color': '', 'last_success_time': none, 'tooltip': '尚无备份'}) %}
+      <span id="backup-header-status" data-live-section>
+        <a href="{{ url_for('system_page') }}#backup-settings" class="backup-chip {{ backup_indicator.color }}" data-backup-color="{{ backup_indicator.color or 'none' }}" style="color: {{ {'good':'var(--good)', 'bad':'var(--bad)', 'warn':'var(--warn)'}.get(backup_indicator.color, 'var(--muted)') }}" title="{{ backup_indicator.tooltip }}" aria-label="{{ backup_indicator.tooltip }}"><span class="status-dot"></span>备份 {{ (backup_indicator.last_success_time|dt)[5:10] if backup_indicator.last_success_time else '—' }}</a>
+      </span>
+      <span id="global-strategy-status" data-live-section>
+        <form method="post" action="{{ url_for('toggle_strategy') }}" id="master-strategy-form" data-async data-master-strategy>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="master-switch" for="master-strategy-toggle" title="手动关闭时发送一条策略关闭通知">
+            <span>策略</span>
+            <input id="master-strategy-toggle" name="enabled" type="checkbox" value="1" role="switch" {% if system.strategy_enabled %}checked{% endif %} aria-label="策略总开关" aria-checked="{{ 'true' if system.strategy_enabled else 'false' }}">
+            <span class="switch-track" aria-hidden="true"></span>
+            <strong data-master-caption>{{ '开启' if system.strategy_enabled else '关闭' }}</strong>
+          </label>
+        </form>
+      </span>
+      <label class="theme-switch" data-theme-switch>
+        <input id="theme-toggle" data-theme-toggle type="checkbox" role="switch" aria-label="切换深色或浅色皮肤" aria-checked="true">
+        <span class="theme-slider" aria-hidden="true">
+          <svg class="theme-icon theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="theme-icon theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A9 9 0 0 1 9.8 3.5a9 9 0 1 0 10.7 10.7Z"/></svg>
+        </span>
+      </label>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logout-btn">退出</button></form>
+    </div>
+  </header>
+  <nav class="page-nav" aria-label="主导航">
+    <a class="page-nav-link {{ 'active' if page == 'status' else '' }}" href="{{ url_for('status', symbol_id=selected.id) if selected else url_for('status') }}" {% if page == 'status' %}aria-current="page"{% endif %}>标的</a>
+    <a class="page-nav-link {{ 'active' if page == 'system' else '' }}" href="{{ url_for('system_page') }}" {% if page == 'system' %}aria-current="page"{% endif %}>系统</a>
+    <a class="page-nav-link {{ 'active' if page == 'backtest' else '' }}" href="{{ url_for('backtest_page', symbol_id=selected.id) if selected else url_for('backtest_page') }}" {% if page == 'backtest' %}aria-current="page"{% endif %}>回测</a>
+  </nav>
+  <main class="page-wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}
+    <div class="flash-stack" role="status" aria-live="polite">{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>
+    {% endif %}{% endwith %}
+    {% block content %}{% endblock %}
+    <footer class="footer-note">{{ app_name }} · 仓位单位：手<br>计划时间按上海时间执行 · {{ now|dt }}</footer>
+  </main>
+  <div class="futures-modal-backdrop" id="futures-confirm-layer" hidden>
+    <section class="futures-modal-card" role="alertdialog" aria-modal="true" aria-labelledby="futures-confirm-title" aria-describedby="futures-confirm-message" tabindex="-1">
+      <div class="futures-modal-icon" aria-hidden="true">!</div>
+      <h2 id="futures-confirm-title" data-confirm-title>确认操作</h2>
+      <p id="futures-confirm-message" data-confirm-message></p>
+      <div class="futures-modal-actions">
+        <button type="button" class="secondary-btn" data-confirm-cancel>取消</button>
+        <button type="button" class="primary-btn" data-confirm-approve>确认继续</button>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

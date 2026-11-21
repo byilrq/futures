@@ -1,0 +1,38 @@
+[
+  {
+    "mktid": "113",
+    "mktname": "上海期货交易所",
+    "mktshort": "SHFE",
+    "rtime": "2026-09-28 16:03:30"
+  },
+  {
+    "mktid": "114",
+    "mktname": "大连商品交易所",
+    "mktshort": "DCE",
+    "rtime": "2026-09-28 16:03:30"
+  },
+  {
+    "mktid": "115",
+    "mktname": "郑州商品交易所",
+    "mktshort": "CZCE",
+    "rtime": "2026-09-28 16:03:30"
+  },
+  {
+    "mktid": "142",
+    "mktname": "上海国际能源交易中心",
+    "mktshort": "INE",
+    "rtime": "2026-09-28 16:03:30"
+  },
+  {
+    "mktid": "220",
+    "mktname": "中金所",
+    "mktshort": "CFFEX",
+    "rtime": "2026-09-28 16:03:30"
+  },
+  {
+    "mktid": "225",
+    "mktname": "广期所",
+    "mktshort": "GFEX",
+    "rtime": "2026-09-28 16:03:30"
+  }
+]

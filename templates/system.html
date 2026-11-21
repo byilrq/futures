@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% from '_labels.html' import source_text %}
+{% block title %}系统 · {{ app_name }}{% endblock %}
+{% block content %}
+<div data-refresh-seconds="{{ system.refresh_seconds }}">
+<section class="card" id="add-symbol">
+  <div class="section-header"><div class="section-title-row"><h2>新增标的</h2><button type="button" class="help-btn" data-help-target="contract-help" aria-controls="contract-help" aria-expanded="false" aria-label="查看期货合约代码填写说明">?</button></div><span class="badge">{{ symbols|length }} 个合约</span></div>
+  <div class="notice accent" id="contract-help" hidden>
+    <p><strong>合约代码 = 品种英文代码 + 交割年月。</strong>例如 <code>m2709</code> 是大连商品交易所豆粕 2027 年 9 月合约；<code>rb2705</code> 是螺纹钢 2027 年 5 月合约。年份不是添加日期，月份必须是该品种实际挂牌的交割月。</p>
+    <p><strong>主力合约会变化。</strong>先在行情软件查看该品种当前主力的实际月份，再填写具体代码。本系统固定监测你填写的月份；主力移仓时，新增新月份并分别维护持仓。</p>
+    <p>郑商所兼容三位年月，例如 <code>SA709</code>，也可输入 <code>SA2709</code>。系统会规范为对应具体月份。不要填写 <code>m0</code>、<code>rb0</code> 等主力连续代码来代替可交易合约。</p>
+    <p>常见品种：豆粕 <code>m</code>、玉米 <code>c</code>、铁矿石 <code>i</code>、螺纹钢 <code>rb</code>、沪铜 <code>cu</code>、纯碱 <code>SA</code>、甲醇 <code>MA</code>、沪深 300 股指 <code>IF</code>、碳酸锂 <code>lc</code>。具体是否挂牌、到期日及交易时段以交易所规则为准。</p>
+  </div>
+  <form method="post" action="{{ url_for('add_symbol') }}" data-once="true">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="new-symbol">具体合约代码</label><input id="new-symbol" name="symbol" type="text" placeholder="例如 m2709" maxlength="20" pattern="[A-Za-z]+[0-9]{3,4}" required autocomplete="off" spellcheck="false"></div>
+      <div class="field-block"><label for="new-name">显示名称</label><input id="new-name" name="name" type="text" placeholder="可留空，自动识别" maxlength="60"></div>
+      <div class="field-block"><label for="new-exchange">交易所</label><select id="new-exchange" name="exchange"><option value="">自动识别</option><option value="DCE">大连商品交易所 DCE</option><option value="SHFE">上海期货交易所 SHFE</option><option value="CZCE">郑州商品交易所 CZCE</option><option value="CFFEX">中国金融期货交易所 CFFEX</option><option value="INE">上海国际能源交易中心 INE</option><option value="GFEX">广州期货交易所 GFEX</option></select></div>
+    </div>
+    <div class="inline-actions"><button type="submit" class="primary-btn">新增标的</button></div>
+  </form>
+  {% if symbols %}<div class="symbol-list">{% for item in symbols %}<div class="symbol-list-item"><div><div class="title">{{ item.name }} <span class="mono">{{ item.symbol }}</span></div><div class="meta">{{ item.exchange }}</div></div></div>{% endfor %}</div>{% endif %}
+</section>
+<form method="post" action="{{ url_for('save_system') }}" id="system-settings" data-async>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="card">
+    <div class="section-header"><h2>行情源设置</h2><span class="badge">两源独立采集</span></div>
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="quote-source">默认行情源</label><select id="quote-source" name="quote_source">{% for key,label in [('auto','自动择源'),('sina','新浪期货'),('eastmoney','东方财富')] %}<option value="{{ key }}" {% if system.quote_source == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="field-help">各标的可单独覆盖系统选择。</p></div>
+      <div class="field-block"><label for="quote-max-age">报价有效期（秒）</label><input id="quote-max-age" name="quote_max_age" type="number" min="30" max="1800" step="1" value="{{ system.quote_max_age }}" required><p class="field-help">超过有效期的报价只展示。</p></div>
+      <div class="field-block"><label for="source-spread-ticks">两源价差阈值（跳）</label><input id="source-spread-ticks" name="source_spread_ticks" type="number" min="1" max="10000" step="1" value="{{ system.source_spread_ticks }}" required><p class="field-help">1 跳等于本合约最小变动价位。</p></div>
+    </div>
+  </section>
+  <section class="card" id="runtime-settings">
+    <div class="section-header"><h2>系统运行设置</h2><label class="panel-toggle" for="panel-toggle-runtime-settings" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-runtime-settings" data-collapse-toggle aria-controls="panel-body-runtime-settings" aria-expanded="false" aria-label="显示或隐藏系统运行设置"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-runtime-settings" hidden>
+    <div class="notice accent" style="margin-top:0">交易、快照与备份时间统一按 <strong>上海时间 Asia/Shanghai</strong> 执行。服务器时区用于对照当地时间。</div>
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="refresh-seconds">行情刷新间隔（秒）</label><input id="refresh-seconds" name="refresh_seconds" type="number" min="15" max="3600" step="1" value="{{ system.refresh_seconds }}" required></div>
+      <div class="field-block"><label for="day-start">交易开始时间（日盘）</label><input id="day-start" name="day_start" type="time" value="{{ system.day_start }}" required></div>
+      <div class="field-block"><label for="day-end">交易结束时间（日盘）</label><input id="day-end" name="day_end" type="time" value="{{ system.day_end }}" required></div>
+      <div class="field-block span-all"><label for="breaks">日盘休市时段</label><input id="breaks" name="breaks" type="text" value="{{ system.breaks }}" placeholder="10:15-10:30,11:30-13:30"><p class="field-help">多个区间用英文逗号分隔；留空表示不设置休市区间。</p></div>
+      <div class="field-block"><label class="check-label" for="night-enabled"><input id="night-enabled" name="night_enabled" type="checkbox" value="1" {% if system.night_enabled %}checked{% endif %}>启用夜盘</label><p class="field-help">支持跨零点；可在标的页覆盖结束时间。</p></div>
+      <div class="field-block"><label for="night-start">夜盘开始时间</label><input id="night-start" name="night_start" type="time" value="{{ system.night_start }}" required></div>
+      <div class="field-block"><label for="night-end">夜盘结束时间</label><input id="night-end" name="night_end" type="time" value="{{ system.night_end }}" required></div>
+      <div class="field-block"><label for="daily-snapshot-time">每日快照时间</label><input id="daily-snapshot-time" name="daily_snapshot_time" type="time" value="{{ system.daily_snapshot_time }}" required></div>
+      <div class="field-block"><label for="backup-time">轮转备份时间</label><input id="backup-time" name="backup_time" type="time" value="{{ system.backup_time }}" required></div>
+      <div class="field-block"><label for="timezone">服务器时区</label><input id="timezone" name="timezone" type="text" list="timezone-options" value="{{ system.timezone }}" required><datalist id="timezone-options"><option value="Asia/Shanghai">上海</option><option value="Asia/Tokyo">东京</option><option value="America/Los_Angeles">洛杉矶</option><option value="Asia/Singapore">新加坡</option><option value="Asia/Hong_Kong">香港</option><option value="Europe/Berlin">法兰克福</option><option value="Etc/UTC">UTC</option></datalist><p class="field-help">可选择或手动输入 IANA 时区。</p></div>
+      <div class="field-block span-all"><label for="closed-dates">额外休市日期</label><textarea id="closed-dates" name="closed_dates" rows="3" placeholder="每行一个日期，例如 2027-01-01">{{ system.closed_dates }}</textarea><p class="field-help">用于交易所节假日。周末由系统处理；请按照交易所日历维护节假日与相关夜盘休市。</p></div>
+    </div>
+    <div class="settings-row" style="margin-top:15px"><span class="section-note" style="margin:0">填写常见时段：</span><button type="button" class="secondary-btn mini-btn" data-time-preset="09:00|15:00|10:15-10:30,11:30-13:30|21:00|23:00|1">商品日盘 + 23 点夜盘</button><button type="button" class="secondary-btn mini-btn" data-time-preset="09:30|15:00|11:30-13:00|21:00|23:00|0">股指日盘</button></div>
+    <p class="timezone-hint">服务器当地时间：{{ server_now }} · 上海时间：{{ now|dt }}</p>
+    <div class="inline-actions"><button type="submit" class="primary-btn">保存系统设置</button><span class="section-note">无须刷新或跳转页面。</span></div>
+  </div></section>
+  <section class="card" id="backup-settings">
+    <div class="section-header"><h2>备份与轮转</h2><label class="panel-toggle" for="panel-toggle-backup-settings" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-backup-settings" data-collapse-toggle aria-controls="panel-body-backup-settings" aria-expanded="false" aria-label="显示或隐藏备份与轮转"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-backup-settings" hidden>
+    <div class="field-block" style="margin-bottom:12px"><label class="check-label" for="backup-enabled"><input id="backup-enabled" name="backup_enabled" type="checkbox" value="1" {% if system.backup_enabled %}checked{% endif %}>启用自动备份</label></div>
+    <div class="form-grid">
+      <div class="field-block span-all"><label for="backup-target">额外备份目标目录</label><input id="backup-target" name="backup_target" type="text" value="{{ system.backup_target }}" placeholder="留空仅本地；例如 /mnt/rclone/futures 或 rclone:futures"><p class="field-help">支持精确目录 /mnt/rclone/futures（不重复添加 futures/）；填写父目录则新建 futures/。如使用 rclone remote，可填写 rclone:futures。修改路径后请通过 futures.sh 重启行情服务以更新目录权限。始终先生成本地备份。</p></div>
+      <div class="field-block"><label for="local-keep">本地保留份数</label><input id="local-keep" name="local_keep" type="number" min="1" max="30" step="1" value="{{ system.local_keep }}" required></div>
+      <div class="field-block"><label for="backup-keep-days">额外备份保留天数</label><input id="backup-keep-days" name="backup_keep_days" type="number" min="1" max="365" step="1" value="{{ system.backup_keep_days }}" required></div>
+      <div class="field-block"><label for="history-keep-days">行情与常规快照保留天数</label><input id="history-keep-days" name="history_keep_days" type="number" min="7" max="730" step="1" value="{{ system.history_keep_days }}" required><p class="field-help">成交、信号与回滚审计记录单独保留。</p></div>
+    </div>
+    {% set backup_indicator = backup_indicator|default({'color': '', 'last_success_text': '尚无成功备份', 'message': '请执行备份'}) %}
+    <div class="notice {{ backup_indicator.color }}" id="backup-runtime-status" data-live-section>最近成功备份（上海时间）：<strong>{{ backup_indicator.last_success_text }}</strong><br>状态：{{ backup_indicator.message }}</div>
+    <div class="inline-actions"><button type="submit" class="primary-btn">保存系统设置</button><span class="section-note">同时保存行情源、运行时间和轮转设置。</span></div>
+  </div></section>
+</form>
+<section class="card" id="runtime-health" data-live-section>
+  <div class="section-header"><h2>运行状态</h2><span class="badge">后台任务</span></div>
+  <div class="snapshot-grid">
+    <div class="snapshot-kv"><div class="k">最近心跳</div><div class="v small">{{ heartbeat.time|dt if heartbeat.time else '等待后台启动' }}</div></div>
+    <div class="snapshot-kv"><div class="k">后台状态</div><div class="v small">{{ {'ok':'正常','error':'异常','waiting':'等待启动'}.get(heartbeat.status,heartbeat.status or '等待启动') }}</div></div>
+    <div class="snapshot-kv"><div class="k">活动合约</div><div class="v">{{ symbols|length }} <small class="muted">个</small></div></div>
+  </div>
+  {% if heartbeat.detail or heartbeat.error %}<div class="notice warn">{{ heartbeat.detail or heartbeat.error }}</div>{% endif %}
+  <div class="inline-actions"><form method="post" action="{{ url_for('request_backup') }}" data-async data-once="true"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-btn">立即备份</button></form><span class="section-note">任务加入后台队列，运行期间可继续浏览。</span></div>
+  {% if backup_files %}<details class="help-panel"><summary>查看本地备份</summary><div class="details-block">{% for backup in backup_files %}{{ backup.name if backup.name is defined else backup }}{% if backup.time is defined %} · {{ backup.time|dt }}{% endif %}
+{% endfor %}</div></details>{% endif %}
+</section>
+<section class="card" id="push-settings">
+  <div class="section-header"><h2>推送配置</h2><label class="panel-toggle" for="panel-toggle-push-settings" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-push-settings" data-collapse-toggle aria-controls="panel-body-push-settings" aria-expanded="false" aria-label="显示或隐藏推送配置"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-push-settings" hidden>
+  <form method="post" action="{{ url_for('save_push') }}" data-async>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+      <div class="field-block"><label for="push-channel">推送通道</label><select id="push-channel" name="PUSH_CHANNEL" data-push-channel><option value="ntfy" {% if push.PUSH_CHANNEL == 'ntfy' %}selected{% endif %}>ntfy</option><option value="gotify" {% if push.PUSH_CHANNEL == 'gotify' %}selected{% endif %}>Gotify</option></select></div>
+      <div class="field-block"><label class="check-label" for="push-enabled"><input id="push-enabled" name="PUSH_ENABLED" type="checkbox" value="yes" {% if push.PUSH_ENABLED == 'yes' %}checked{% endif %}>启用推送</label></div>
+    </div>
+    <div class="config-channels" data-channel="ntfy">
+      <div class="form-grid">
+        <div class="field-block"><label for="ntfy-url">ntfy 服务地址</label><input id="ntfy-url" name="NTFY_URL" type="url" value="{{ push.NTFY_URL }}" placeholder="http://127.0.0.1:8083"></div>
+        <div class="field-block"><label for="ntfy-topic">ntfy Topic</label><input id="ntfy-topic" name="NTFY_TOPIC" type="text" value="{{ push.NTFY_TOPIC }}" placeholder="futures"><p class="field-help">客户端订阅同一 Topic。</p></div>
+        <div class="field-block"><label for="ntfy-username">ntfy 用户名</label><input id="ntfy-username" name="NTFY_USERNAME" type="text" value="{{ push.NTFY_USERNAME }}" autocomplete="off"></div>
+        <div class="field-block"><label for="ntfy-password">ntfy 密码</label><input id="ntfy-password" name="NTFY_PASSWORD" type="password" value="" autocomplete="new-password" placeholder="{{ '*' * push_password_length if push_has_password else '未设置' }}"><p class="field-help">输入时按实际位数显示星号；已保存密码仅以等长星号占位，留空表示保持原密码。</p></div>
+        <div class="field-block"><label for="ntfy-priority">ntfy 优先级</label><select id="ntfy-priority" name="NTFY_PRIORITY">{% for priority,label in [('1','1 · 最低'),('2','2 · 较低'),('3','3 · 默认'),('4','4 · 较高'),('5','5 · 最高')] %}<option value="{{ priority }}" {% if push.NTFY_PRIORITY|string == priority %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      </div>
+    </div>
+    <div class="config-channels" data-channel="gotify">
+      <div class="form-grid">
+        <div class="field-block"><label for="gotify-url">Gotify 服务地址</label><input id="gotify-url" name="GOTIFY_URL" type="url" value="{{ push.GOTIFY_URL }}" placeholder="https://notify.example.com"></div>
+        <div class="field-block"><label for="gotify-token">Gotify Application Token</label><input id="gotify-token" name="GOTIFY_TOKEN" type="password" value="" autocomplete="new-password" placeholder="{{ '已设置，留空保持' if push_has_token else '未设置' }}"><label class="check-label" for="clear-gotify-token"><input id="clear-gotify-token" name="clear_gotify_token" type="checkbox" value="1">清除已保存 Token</label></div>
+        <div class="field-block"><label for="gotify-priority">Gotify 优先级</label><input id="gotify-priority" name="GOTIFY_PRIORITY" type="number" step="1" min="0" max="10" value="{{ push.GOTIFY_PRIORITY }}"></div>
+      </div>
+    </div>
+    <div class="inline-actions"><button type="submit" class="primary-btn">保存推送配置</button></div>
+  </form>
+  <div class="subsection"><form method="post" action="{{ url_for('test_push') }}" data-async data-once="true"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-btn">发送测试</button><span class="section-note" style="margin-left:9px">测试使用已保存的配置。</span></form></div>
+</div></section>
+<section class="card" id="push-logs" data-live-section>
+  <div class="section-header"><h2>推送日志</h2><label class="panel-toggle" for="panel-toggle-push-logs" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-push-logs" data-collapse-toggle aria-controls="panel-body-push-logs" aria-expanded="false" aria-label="显示或隐藏推送日志"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-push-logs" hidden>
+  <div class="inline-actions"><form method="post" action="{{ url_for('clear_push_logs') }}" data-async data-confirm-danger="true" data-confirm-title="清空推送日志" data-confirm-label="确认清空" data-confirm="确认清空已完成的推送展示日志？策略与成交审计记录仍会保留。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-btn mini-btn">清空已完成日志</button></form></div>
+  <p class="section-note">最近 {{ push_logs|length }} 条（最多 30 条），数据库自动清理更早的已处理消息；待发送/发送中任务不会被清理。展开查看完整内容、发送结果与重试次数。</p>
+  {% if push_logs %}<div class="log-list">{% for log in push_logs %}<details class="log-item" id="push-log-{{ log.id }}"><summary><span class="log-title">{{ log.title or ('每日快照' if log.kind == 'daily' else '推送消息') }}</span><span class="log-time">{{ log.time|dt }}</span><span class="badge {{ 'good' if log.status in ['sent','success'] else 'bad' if log.status in ['failed','unknown'] else 'warn' }}">{{ {'pending':'待发送','queued':'已排队','sending':'发送中','sent':'已发送','success':'成功','failed':'失败','error':'失败','unknown':'送达待核对','disabled':'已跳过','skipped':'已跳过','cancelled':'已取消','canceled':'已取消'}.get(log.status,log.status) }}</span></summary><div class="log-detail"><div class="log-time">{{ log.time|dt }}</div><div class="details-block">{{ source_text(log.body) }}</div><p class="muted" style="margin-top:12px">结果：{{ source_text(log.detail or '等待发送结果') }} · 尝试 {{ log.attempts }} 次</p>{% if log.status in ['failed','unknown'] %}<form method="post" action="{{ url_for('retry_push', message_id=log.id) }}" data-async data-once="true" data-confirm-title="重试推送" data-confirm-label="确认重试" data-confirm="确认重试这条通知？若对端实际收到过但回执失败，可能再次收到相同内容。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-btn mini-btn">重试推送</button></form>{% endif %}</div></details>{% endfor %}</div>{% else %}<div class="empty-state">暂无推送日志。可先保存配置并发送测试。</div>{% endif %}
+</div></section>
+</div>
+{% endblock %}

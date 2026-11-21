@@ -1,0 +1,20 @@
+{% from '_labels.html' import kind_label, source_text %}
+<section class="card" id="trade-events" data-live-section>
+  <div class="section-header"><h2>交易快照</h2><span class="badge">最近 {{ events|length }} 条（最多 20 条）</span><label class="panel-toggle" for="panel-toggle-trade-events" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-trade-events" data-collapse-toggle aria-controls="panel-body-trade-events" aria-expanded="false" aria-label="显示或隐藏交易快照"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-trade-events" hidden>
+  <p class="section-note">记录策略实际触发的买卖信号（仅提醒，不代表成交）和手动开仓/平仓记录；配置修改、行情轮询及每日快照不进入此处。</p>
+  {% if events %}<div class="log-list">{% for event in events %}
+  <details class="log-item {{ 'dimmed' if event.reverted_by else '' }}" id="event-{{ event.id }}">
+    <summary><span class="log-title">{% if event.kind == 'manual' %}{{ {'open_long':'买入开多','close_long':'卖出平多','open_short':'卖出开空','close_short':'买入平空'}.get(event.side, '手动成交') }}{% if event.lots %} · {{ event.lots }} 手{% endif %}{% if event.price %} @ {{ event.price|num }}{% endif %}{% else %}{{ event.title }}{% endif %}</span><span class="log-time">{{ event.time|dt }}</span><span class="badge {{ 'warn' if event.reverted_by else 'accent' if event.kind == 'signal' else '' }}">{{ '已回滚' if event.reverted_by else kind_label(event.kind) }}</span></summary>
+    <div class="log-detail"><div class="log-time">{{ event.time|dt }}</div><div class="details-block">{{ source_text(event.detail) }}</div>{% if event.price %}<p class="muted">价格 {{ event.price|num }}{% if event.lots %} · {{ event.lots }} 手{% endif %}</p>{% endif %}{% if event.reverted_by %}<p class="warn-text">该条记录已由回滚操作作废，保留用于核对。</p>{% endif %}</div>
+  </details>{% endfor %}</div>{% else %}<div class="empty-state">暂无交易记录。手动开仓/平仓或价格阶梯策略触发后，将在这里显示。</div>{% endif %}
+</div></section>
+<section class="card" id="snapshot-history" data-live-section>
+  <div class="section-header"><h2>快照与状态回滚</h2><span class="badge">最近 {{ snapshots|length }} 条（最多 20 条）</span><label class="panel-toggle" for="panel-toggle-snapshot-history" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-snapshot-history" data-collapse-toggle aria-controls="panel-body-snapshot-history" aria-expanded="false" aria-label="显示或隐藏快照与状态回滚"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-snapshot-history" hidden>
+  <p class="section-note">仅在手动成交或策略信号触发时，保存事件发生前的仓位与策略状态。回滚会撤销该笔及之后的成交/信号；不会撤销已保存的策略配置或已发出的通知。</p>
+  {% if snapshots %}<div class="table-wrap"><table><thead><tr><th>时间</th><th>类型</th><th class="num">价格</th><th>说明</th><th>操作</th></tr></thead><tbody>
+  {% for snapshot in snapshots %}<tr><td>{{ snapshot.time|dt }}</td><td>{{ kind_label(snapshot.kind) }}</td><td class="num">{{ snapshot.price|num }}</td><td class="wrap">{{ source_text(snapshot.reason) }}</td><td>
+    <form method="post" action="{{ url_for('rollback', symbol_id=selected.id) }}" data-async data-once="true" data-confirm-danger="true" data-confirm-title="回滚到历史快照" data-confirm-label="确认回滚" data-confirm="确认恢复 {{ selected.symbol }} 在 {{ snapshot.time|dt }} 此次交易或策略信号发生前的状态？该笔及其后续成交/信号会撤销；现有配置不变，已发送通知无法撤回。">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="snapshot_id" value="{{ snapshot.id }}"><input type="hidden" name="revision" value="{{ selected.revision }}"><input type="hidden" name="request_id" value="{{ request_id() }}">{% if snapshot.can_rollback %}<button type="submit" class="secondary-btn mini-btn">回滚至事件前</button>{% else %}<span class="muted">已撤销</span>{% endif %}
+    </form>
+  </td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state">暂无可回滚的成交或策略信号。只有实际事件发生后才建立检查点。</div>{% endif %}
+</div></section>

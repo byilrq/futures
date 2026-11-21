@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}标的 · {{ app_name }}{% endblock %}
+{% block content %}
+<div data-refresh-seconds="{{ system.refresh_seconds }}">
+<section class="card">
+  <div class="section-header"><h2>当前标的</h2><span class="refresh-note" data-refresh-note>每 {{ system.refresh_seconds }} 秒同步页面</span></div>
+  {% if symbols %}
+  <div class="symbol-switcher-row">
+    <form method="get" action="{{ url_for('status') }}" id="symbol-switcher-form" class="symbol-switcher-select">
+      <div class="field-block"><label for="symbol_id" class="visually-hidden">选择期货合约</label><select id="symbol_id" name="symbol_id" class="selected-symbol-select" data-auto-select-symbol aria-label="选择合约后立即切换">{% for item in symbols %}<option value="{{ item.id }}" {% if selected and item.id == selected.id %}selected{% endif %}>{{ item.name }} · {{ item.symbol }} · {{ item.exchange }}</option>{% endfor %}</select></div>
+      <button class="visually-hidden" type="submit">确定选择</button>
+    </form>
+    {% if selected %}
+    <div class="symbol-switcher-actions">
+      <form method="post" action="{{ url_for('refresh_symbol', symbol_id=selected.id) }}" data-async data-refresh-job id="symbol-refresh-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="secondary-btn">刷新</button>
+      </form>
+      <form method="post" action="{{ url_for('delete_symbol', symbol_id=selected.id) }}" id="symbol-delete-form" data-confirm-danger="true" data-confirm-title="删除当前标的" data-confirm-label="确认永久删除" data-confirm="确认永久删除【{{ selected.name }}】（{{ selected.symbol }}）吗？关联行情、交易、策略快照、推送和回测历史将一并清除，无法撤销；请先通过备份保存需要的数据。">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="symbol" value="{{ selected.symbol }}"><input type="hidden" name="revision" value="{{ selected.revision }}"><input type="hidden" name="confirm_delete" value="">
+        <button type="submit" class="danger-btn">删除</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}<div class="empty-state"><h3>添加第一个期货合约</h3>在系统页填写品种代码与交割年月，例如 <code>m2709</code>，再设置价格线。</div>{% endif %}
+</section>
+{% if selected %}
+{% include '_live.html' %}
+{% set cfg = selected.config %}
+<section class="card" id="strategy-settings">
+  <div class="section-header"><h2>策略与价格监控</h2><span class="badge">{{ selected.symbol }}</span><label class="panel-toggle" for="panel-toggle-strategy-settings" title="展开或收起本区块"><span class="panel-toggle-text">显示</span><input type="checkbox" role="switch" id="panel-toggle-strategy-settings" data-collapse-toggle aria-controls="panel-body-strategy-settings" aria-expanded="false" aria-label="显示或隐藏策略与价格监控"><span class="switch-track" aria-hidden="true"></span></label></div><div class="collapse-content" id="panel-body-strategy-settings" hidden>
+  <form method="post" action="{{ url_for('save_symbol', symbol_id=selected.id) }}" id="symbol-settings-form" data-async data-revision-form data-confirm-title="保存策略参数" data-confirm-label="确认保存" data-confirm="确认保存 {{ selected.symbol }} 参数？修改价格线或间隔等阶梯参数会开启新轮次，并从下一条有效报价重新建立基线。">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ selected.revision }}">
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="lower_price">买入底价</label><input id="lower_price" name="lower_price" type="number" step="any" min="0" value="{{ cfg.lower_price if cfg.lower_price is not none else '' }}" placeholder="向下击穿触发"></div>
+      <div class="field-block"><label for="upper_price">卖出顶价</label><input id="upper_price" name="upper_price" type="number" step="any" min="0" value="{{ cfg.upper_price if cfg.upper_price is not none else '' }}" placeholder="向上击穿触发"></div>
+      <div class="field-block"><label for="signal_lots">每档提醒数量（手）</label><input id="signal_lots" name="signal_lots" type="number" step="1" min="1" value="{{ cfg.signal_lots }}" required></div>
+      <div class="field-block"><label for="down_step">下跌间隔（点）</label><input id="down_step" name="down_step" type="number" step="any" min="0.000001" value="{{ cfg.down_step }}" required></div>
+      <div class="field-block"><label for="up_step">上涨间隔（点）</label><input id="up_step" name="up_step" type="number" step="any" min="0.000001" value="{{ cfg.up_step }}" required></div>
+      <div class="field-block"><label for="rearm_mode">阶梯重启方式</label><select id="rearm_mode" name="rearm_mode"><option value="return" {% if cfg.rearm_mode|default('return') == 'return' %}selected{% endif %}>回到起始线后重启该侧</option><option value="manual" {% if cfg.rearm_mode|default('return') == 'manual' %}selected{% endif %}>仅手动重置</option></select></div>
+      <div class="field-block"><label for="multiplier">合约乘数（每点每手）</label><input id="multiplier" name="multiplier" type="number" step="any" min="0.000001" value="{{ cfg.multiplier }}" required><p class="field-help">用于成交与盈亏记账，请核对合约规则。</p></div>
+      <div class="field-block"><label for="tick_size">最小变动价位（点）</label><input id="tick_size" name="tick_size" type="number" step="any" min="0.000001" value="{{ cfg.tick_size }}" required></div>
+      <div class="field-block"><label for="source">本标的行情源</label><select id="source" name="source">{% for key,label in [('inherit','跟随系统'),('auto','自动择源'),('sina','新浪期货'),('eastmoney','东方财富')] %}<option value="{{ key }}" {% if cfg.source == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="field-block"><label for="night_end">本标的夜盘结束</label><select id="night_end" name="night_end">{% for value,label in [('','跟随系统'),('off','不监测夜盘'),('23:00','23:00'),('01:00','次日 01:00'),('02:30','次日 02:30')] %}<option value="{{ value }}" {% if (cfg.night_end or '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}{% if cfg.night_end and cfg.night_end not in ['off','23:00','01:00','02:30'] %}<option value="{{ cfg.night_end }}" selected>{{ cfg.night_end }}</option>{% endif %}</select><p class="field-help">按当前品种选择，支持跨零点夜盘。</p></div>
+      <div class="field-block"><label for="monitor_step">价格监控间隔（点）</label><input id="monitor_step" name="monitor_step" type="number" step="any" min="0.000001" value="{{ cfg.monitor_step }}"><p class="field-help">相对监控锚点变化达到间隔时提醒。</p></div>
+    </div>
+    <div class="inline-actions"><button type="submit" class="primary-btn">保存参数</button><span class="section-note">价格线与间隔按点数计算；实际持仓由手动成交维护。</span></div>
+  </form>
+  <div class="subsection">
+    <form method="post" action="{{ url_for('reset_strategy', symbol_id=selected.id) }}" id="reset-form" data-async data-revision-form data-once="true" data-confirm-danger="true" data-confirm-title="重置价格阶梯" data-confirm-label="确认重置" data-confirm="确认重置 {{ selected.symbol }} 的价格阶梯？已触发档位清零，实际持仓保留，下一条有效行情只建立观察基线。"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ selected.revision }}"><input type="hidden" name="request_id" value="{{ request_id() }}"><button type="submit" class="secondary-btn">重置阶梯</button></form>
+  </div>
+</div></section>
+<section class="card" id="manual-trade">
+  <div class="section-header"><h2>手动交易</h2><span class="badge">成交记账</span></div>
+  <form method="post" action="{{ url_for('manual_trade', symbol_id=selected.id) }}" id="manual-trade-form" data-async data-revision-form data-once="true">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ selected.revision }}"><input type="hidden" name="request_id" value="{{ request_id() }}">
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="trade-side">成交方向</label><select id="trade-side" name="side"><option value="open_long">买入开多</option><option value="close_long">卖出平多</option><option value="open_short">卖出开空</option><option value="close_short">买入平空</option></select></div>
+      <div class="field-block"><label for="trade-price">成交价格</label><input id="trade-price" name="price" type="number" step="any" min="0.000001" placeholder="实际成交价" required></div>
+      <div class="field-block"><label for="trade-lots">成交数量（手）</label><input id="trade-lots" name="lots" type="number" step="1" min="1" placeholder="正整数" required></div>
+    </div>
+    <div class="inline-actions"><button type="submit" class="primary-btn">记录成交</button></div>
+  </form>
+</section>
+{% include '_history.html' %}
+{% endif %}
+</div>
+{% endblock %}

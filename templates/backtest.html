@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}主力合约回测 · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="card" data-refresh-seconds="{{ system.refresh_seconds }}">
+  <div class="section-header"><div><h2>主力合约 · 跨月回测</h2><p class="section-note">直接下载免费历史日线，按每个真实交割月份构建可核对的主力链，不依赖本地采集。</p></div><span class="badge">实际合约移仓</span></div>
+  {% if not symbols %}
+  <div class="empty-state"><h3>请先添加一个期货品种</h3>在系统页添加任一具体月份合约（如 m2705），回测会自动研究整个品种的历史月份，而不是只研究 m2705。<p><a class="primary-btn" href="{{ url_for('system_page') }}#add-symbol">进入系统页面</a></p></div>
+  {% else %}
+  {% set cfg = selected.config if selected else symbols[0].config %}
+  {% set f = request.form %}
+  <form method="post" action="{{ url_for('backtest_page') }}" data-once="true" id="main-backtest-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid three-col">
+      <div class="field-block"><label for="backtest-symbol">期货品种</label><select id="backtest-symbol" name="symbol_id" data-backtest-symbol data-select-url="{{ url_for('backtest_page') }}">{% for item in symbols %}<option value="{{ item.id }}" {% if selected and item.id == selected.id %}selected{% endif %}>{{ item.name }} · {{ item.symbol }}</option>{% endfor %}</select><p class="field-help">从合约代码提取品种（例如 m2705 → 豆粕 m），自动检索该品种历年交割月份。</p></div>
+      <div class="field-block"><label for="bt-mode">回测模式</label><select name="mode" id="bt-mode" data-bt-mode><option value="grid" {% if f.get('mode','grid')=='grid' %}selected{% endif %}>价格阶梯策略（开多 / 平多）</option><option value="hold" {% if f.get('mode')=='hold' %}selected{% endif %}>长期持有 · 自动移仓换月</option></select><p class="field-help">两种模式均显示同一品种的长期持有 1 手基准。</p></div>
+      <div class="field-block"><label for="backtest-source">历史行情</label><select id="backtest-source" name="source">{% for key,label in [('auto','自动：新浪历史优先 / 东财回退'),('sina','只用新浪期货'),('eastmoney','只用东方财富')] %}<option value="{{ key }}" {% if f.get('source','auto')==key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="field-help">免费公网接口需要 VPS 能够访问；过期合约在部分提供方可能已下架，无法保证所有年份。</p></div>
+      <div class="field-block"><label for="backtest-start">开始日期</label><input id="backtest-start" name="start" type="date" value="{{ f.get('start',defaults.start) }}" required></div>
+      <div class="field-block"><label for="backtest-end">结束日期</label><input id="backtest-end" name="end" type="date" value="{{ f.get('end',defaults.end) }}" required></div>
+      <div class="field-block"><label for="bt-roll-days">距离交割月提前换月（自然日）</label><input id="bt-roll-days" name="roll_days" type="number" min="0" max="90" step="1" value="{{ f.get('roll_days',defaults.roll_days) }}" required><p class="field-help">安全截止线；未到截止线也可根据历史持仓量更早换月。</p></div>
+      <div class="field-block"><label for="bt-roll-confirm">新主力连续领先（交易日）</label><input id="bt-roll-confirm" name="roll_confirm" type="number" min="1" max="5" step="1" value="{{ f.get('roll_confirm',defaults.roll_confirm) }}" required></div>
+      <div class="field-block"><label for="bt-ratio">新合约持仓量相对旧合约（倍）</label><input id="bt-ratio" name="oi_ratio" type="number" min="1" max="3" step="0.01" value="{{ f.get('oi_ratio',defaults.oi_ratio) }}" required></div>
+      <div class="field-block"><label for="bt-max-lots">最高持仓（手）</label><input id="bt-max-lots" name="max_lots" type="number" min="1" max="100000" value="{{ f.get('max_lots',defaults.max_lots) }}" required></div>
+    </div>
+    <div class="subsection" data-bt-grid><h3>价格阶梯（仅策略模式）</h3>
+      <div class="form-grid three-col">
+        <div class="field-block"><label for="bt-lines">价格线参照方式</label><select id="bt-lines" name="lines_mode" data-bt-lines><option value="auto" {% if f.get('lines_mode','auto')=='auto' %}selected{% endif %}>以回测首日主力收盘价为中心（推荐）</option><option value="fixed" {% if f.get('lines_mode')=='fixed' %}selected{% endif %}>手动固定买卖起始价</option></select><p class="field-help">跨期时整套价格线平移相同价差，不把换月价格跳空当成交易信号。</p></div>
+        <div class="field-block" data-bt-fixed><label for="bt-lower">买入底价（固定模式）</label><input id="bt-lower" name="lower_price" type="number" min="0.000001" step="any" value="{{ f.get('lower_price',cfg.lower_price if cfg.lower_price is not none else '') }}"></div>
+        <div class="field-block" data-bt-fixed><label for="bt-upper">卖出顶价（固定模式）</label><input id="bt-upper" name="upper_price" type="number" min="0.000001" step="any" value="{{ f.get('upper_price',cfg.upper_price if cfg.upper_price is not none else '') }}"></div>
+        <div class="field-block"><label for="bt-down">下跌阶梯（点）</label><input id="bt-down" name="down_step" type="number" min="0.000001" step="any" value="{{ f.get('down_step',cfg.down_step or '100') }}" required></div>
+        <div class="field-block"><label for="bt-up">上涨阶梯（点）</label><input id="bt-up" name="up_step" type="number" min="0.000001" step="any" value="{{ f.get('up_step',cfg.up_step or '100') }}" required></div>
+        <div class="field-block"><label for="bt-lots">每档手数</label><input id="bt-lots" name="signal_lots" type="number" min="1" step="1" value="{{ f.get('signal_lots',cfg.signal_lots or 1) }}" required></div>
+        <div class="field-block"><label for="bt-rearm">阶梯重启</label><select id="bt-rearm" name="rearm_mode"><option value="return" {% if f.get('rearm_mode',cfg.rearm_mode|default('return'))=='return' %}selected{% endif %}>价格回到起始线后重启</option><option value="manual" {% if f.get('rearm_mode',cfg.rearm_mode|default('return'))=='manual' %}selected{% endif %}>不自动重启</option></select></div>
+      </div>
+    </div>
+    <div class="subsection"><h3>资金与成交假设</h3><div class="form-grid three-col">
+      <div class="field-block"><label for="bt-cash">初始资金（元）</label><input id="bt-cash" name="initial_cash" type="number" min="0.01" step="any" value="{{ f.get('initial_cash',defaults.initial_cash) }}" required></div>
+      <div class="field-block" data-bt-hold><label for="bt-hold">长期持有手数</label><input id="bt-hold" name="hold_lots" type="number" min="1" max="100000" step="1" value="{{ f.get('hold_lots',defaults.hold_lots) }}"></div>
+      <div class="field-block"><label for="bt-fee">每手单边手续费（元）</label><input id="bt-fee" name="fee_per_lot" type="number" min="0" step="any" value="{{ f.get('fee_per_lot',defaults.fee_per_lot) }}" required></div>
+      <div class="field-block"><label for="bt-slippage">每手单边不利滑点（点）</label><input id="bt-slippage" name="slippage" type="number" min="0" step="any" value="{{ f.get('slippage',defaults.slippage) }}" required></div>
+      <div class="field-block"><label for="bt-multiplier">合约乘数（元/点/手）</label><input id="bt-multiplier" name="multiplier" type="number" min="0.000001" step="any" value="{{ f.get('multiplier',cfg.multiplier) }}" required></div>
+      <div class="field-block"><label for="bt-tick">最小变动价位（点）</label><input id="bt-tick" name="tick_size" type="number" min="0.000001" step="any" value="{{ f.get('tick_size',cfg.tick_size) }}" required></div>
+    </div></div>
+    <div class="notice"><strong>计价原则：</strong>前一交易日的持仓量决定下一日主力候选，旧合约按实际收盘价结算，新合约同日收盘价接续持仓；价差只用于价格线平移，不直接计盈亏。每次换月双边手续费和双边滑点均计入成本。日线无法还原盘中路径，收盘成交不保证真实可成交。<strong>全部回测数据来源于公网，不使用本地报价库。</strong></div>
+    <div class="inline-actions"><button class="primary-btn" type="submit" data-bt-run>下载历史并开始回测</button><span class="section-note">多个历史月份合约需要逐个下载，运行时间取决于服务器访问两源的网络情况。</span></div>
+  </form>
+  {% endif %}
+</section>
+{% if result %}
+<section class="card" id="backtest-result">
+  {% if result.legacy %}<div class="notice warn">这是升级前生成的单合约回测报告，不包含新版主力合约移仓回测数据。</div>{% endif %}
+  <div class="section-header"><div><h2>主力回测结果</h2><p class="section-note">{{ result.symbol }} · {{ '旧版单合约回测' if result.legacy else ('长期持有' if result.config.mode=='hold' else '阶梯策略') }} · {{ result.stats.start }} 至 {{ result.stats.end }}</p></div><a class="secondary-btn mini-btn" href="{{ url_for('download_backtest', run_id=result.id) }}">导出交易明细 CSV</a></div>
+  <div class="backtest-result-top">
+    {% for label,key,suffix in [('累计净收益','total_pnl','元'),('收益率','return_pct','%'),('最大回撤','max_drawdown','元'),('最大回撤率','max_drawdown_pct','%'),('移仓次数','rolls','次'),('期末持仓','end_lots','手'),('手续费','fees','元'),('滑点成本','slippage_cost','元'),('长期持有 1 手基准','buy_hold_pnl','元'),('年化收益率','annualized_return_pct','%'),('实际交易笔数','trades','笔'),('期末权益','ending_equity','元')] %}
+    <div class="snapshot-kv"><div class="k">{{ label }}</div><div class="v">{{ result.stats[key]|num }}</div><div class="sub">{{ suffix }}</div></div>{% endfor %}
+  </div>
+  {% if result.source_info %}
+  <div class="notice">数据完整性：检索 {{ result.source_info.requested }} 个交割月份，取得 {{ result.source_info.received }} 个合约；{% for provider,count in result.source_info.providers.items() %}{{ '新浪' if provider=='sina' else '东财' }} {{ count }} 个 {% endfor %}。所有盈亏均采用实际月份价格，缺少必要交易日会拒绝给出收益。</div>
+  {% endif %}
+  {% if result.first_main %}<div class="section-note">首日确认主力：{{ result.first_main.symbol }} · {{ result.first_main.time }} · {{ result.first_main.price }}；回测价格线可以按该价格自动初始化。</div>{% endif %}
+  <div class="source-footer"><span>{{ result.stats.points }} 个交易日 · {{ result.stats.signals }} 个阶梯信号 · {{ result.stats.rolls }} 次换月</span><span>价格线调整仅用于信号；盈亏采用逐日盯市 + 真实合约移仓</span></div>
+  {% for warning in result.warnings %}<div class="notice warn">{{ warning }}</div>{% endfor %}
+  {% if result.series %}
+  <div class="settings-row" style="margin-top:17px"><label class="check-label"><input type="radio" name="chart_mode" value="price" data-chart-mode checked>价差调整参考线</label><label class="check-label"><input type="radio" name="chart_mode" value="equity" data-chart-mode>权益曲线（含 1 手基准）</label></div>
+  <div class="chart-wrap" id="backtest-chart"><div class="chart-tooltip" hidden></div></div>
+  <div class="chart-legend"><span data-chart-legend-main><i class="legend-mark"></i>价差调整参考价</span><span data-chart-price-legend><i class="legend-mark buy"></i>买入初始线</span><span data-chart-price-legend><i class="legend-mark sell"></i>卖出初始线</span><span data-chart-trade-buy hidden><i class="legend-trade-symbol buy-dot" aria-hidden="true"></i>&#x4E70;&#x5165;&#x6210;&#x4EA4;</span><span data-chart-trade-sell hidden><i class="legend-trade-symbol sell-cross" aria-hidden="true"></i>&#x5356;&#x51FA;&#x6210;&#x4EA4;</span><span data-chart-benchmark-legend hidden><i class="legend-mark"></i>长线持有 1 手基准</span></div>
+  <script id="backtest-chart-data" type="application/json">{{ {'series':result.series,'trades':result.trades|default([]),'lower':result.config.strategy.lower_price,'upper':result.config.strategy.upper_price}|tojson }}</script>
+  {% endif %}
+  <div class="section-subrow"><h3>移仓换月明细</h3><span class="badge">{{ result.rolls|length if result.rolls else 0 }} 次</span></div>
+  {% if result.rolls %}
+  <div class="table-wrap"><table><thead><tr><th>交易日</th><th>旧合约</th><th>新合约</th><th class="num">旧价</th><th class="num">新价</th><th class="num">同期价差</th><th class="num">换月手数</th><th class="num">手续费</th><th class="num">滑点成本</th><th>原因</th></tr></thead><tbody>{% for roll in result.rolls %}<tr><td>{{ roll.time }}</td><td class="mono">{{ roll['from'] }}</td><td class="mono">{{ roll.to }}</td><td class="num">{{ roll.old_price|num }}</td><td class="num">{{ roll.new_price|num }}</td><td class="num">{{ roll.spread|num }}</td><td class="num">{{ roll.lots }}</td><td class="num">{{ roll.fees|num }}</td><td class="num">{{ roll.slippage_cost|num }}</td><td>{{ roll.reason }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="empty-state">区间内没有主力换月；可能区间较短或主力尚未切换。</div>{% endif %}
+  <div class="section-subrow"><h3>模拟成交记录</h3><span class="section-note">前 {{ [result.trades|length,500]|min }} 条 · 完整数据可导出 CSV</span></div>
+  {% if result.trades %}<div class="table-wrap"><table><thead><tr><th>日期</th><th>合约</th><th>动作</th><th class="num">实际价</th><th class="num">手数</th><th class="num">手续费</th><th class="num">权益</th><th>说明</th></tr></thead><tbody>{% for t in result.trades[:500] %}<tr><td>{{ t.time }}</td><td class="mono">{{ t.symbol }}</td><td>{{ {'buy':'买入','sell':'卖出','roll':'换月'}.get(t.side,t.side) }}</td><td class="num">{{ t.price|num }}</td><td class="num">{{ t.lots }}</td><td class="num">{{ t.fee|num }}</td><td class="num">{{ t.equity|num }}</td><td class="wrap">{{ t.reason }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state">没有产生策略模拟成交；可选择长线持有模式，或调整起始线及间隔。</div>{% endif %}
+  <details class="help-panel"><summary>查看本次算法与参数</summary><pre class="details-block">{{ result.config|jsonpretty }}</pre></details>
+</section>
+{% endif %}
+{% if runs %}<section class="card"><div class="section-header"><h2>历史回测报告</h2><span class="badge">最近 {{ runs|length }} 次</span></div><div class="table-wrap"><table><thead><tr><th>完成时间</th><th>品种</th><th>总收益</th><th>查看</th></tr></thead><tbody>{% for run in runs %}<tr><td>{{ run.time|dt }}</td><td>{{ run.symbol }}</td><td>{{ run.summary.total_pnl|num }} 元</td><td><a href="{{ url_for('backtest_page', run_id=run.id) }}">查看</a> · <a href="{{ url_for('download_backtest',run_id=run.id) }}">CSV</a></td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+{% endblock %}

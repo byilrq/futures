@@ -1,0 +1,45 @@
+{% if selected %}
+{% from '_labels.html' import source_text %}
+{% set state = selected.state %}{% set cfg = selected.config %}{% set strat = state.strategy %}{% set position = state.portfolio %}{% set market = state.market %}
+<section class="card" id="symbol-snapshot" data-live-section>
+  <div class="section-header"><div><div class="section-kicker">{{ selected.symbol }} · {{ selected.exchange }}</div><h2>标的快照</h2></div><span class="badge {{ 'good' if in_session else 'warn' }}"><span class="status-dot"></span>{{ '交易时段' if in_session else '非交易时段' }}</span></div>
+  <div class="snapshot-grid">
+    <div class="snapshot-kv primary"><div class="k">最新价格</div><div class="v price">{{ market.price|num }}</div><div class="sub">{{ market.quote_at|dt if market.quote_at else '等待行情' }}</div></div>
+    <div class="snapshot-kv"><div class="k">多头仓位</div><div class="v">{{ position.long_lots }} <small class="muted">手</small></div><div class="sub">均价 {{ position.long_avg|num }}</div></div>
+    <div class="snapshot-kv"><div class="k">空头仓位</div><div class="v">{{ position.short_lots }} <small class="muted">手</small></div><div class="sub">均价 {{ position.short_avg|num }}</div></div>
+    <div class="snapshot-kv"><div class="k">已实现损益</div><div class="v">{{ position.realized_pnl|num }}</div><div class="sub">元 · 按成交价格与合约乘数计算</div></div>
+    <div class="snapshot-kv"><div class="k">浮动盈亏</div><div class="v">{{ unrealized|num }}</div><div class="sub">元 · 按页面所示报价估算</div></div>
+    <div class="snapshot-kv contract-month {{ contract_month.level }}"><div class="k">距离合约月</div><div class="v">{{ contract_month.display }}</div><div class="sub">{{ contract_month.detail }}</div></div>
+  </div>
+  <div class="notice {{ 'warn' if market.error else '' }}">{{ source_text(status_text or state.last_reason or '等待后台采集行情。首次有效行情仅建立观察基线。') }}</div>
+  <div class="source-footer"><span>行情状态：{{ {'waiting':'等待行情','ok':'正常','closed':'非交易时段','stale':'报价过期','error':'行情异常','rejected':'本轮未采用'}.get(market.status,market.status or '等待行情') }}</span><span>合约乘数 {{ cfg.multiplier|num }} · 最小变动 {{ cfg.tick_size|num }} 点</span></div>
+</section>
+<section class="card" id="strategy-snapshot" data-live-section>
+  {% set active_quotes = quotes|selectattr('selected')|selectattr('fresh')|list %}
+  <div class="section-header"><h2>策略快照</h2><span class="badge {{ 'good' if system.strategy_enabled and cfg.lower_price and cfg.upper_price and in_session and active_quotes else 'warn' }}">{% if not system.strategy_enabled %}总策略已关闭{% elif not cfg.lower_price or not cfg.upper_price %}待配置价格线{% elif not in_session %}等待交易时段{% elif not active_quotes %}等待有效行情{% else %}监测运行中{% endif %}</span></div>
+  <div class="snapshot-grid">
+    <div class="snapshot-kv"><div class="k">下一买入线</div><div class="v buy-text">{{ strat.next_buy|num }}</div><div class="sub">向下严格击穿后提醒</div></div>
+    <div class="snapshot-kv"><div class="k">下一卖出线</div><div class="v sell-text">{{ strat.next_sell|num }}</div><div class="sub">向上严格击穿后提醒</div></div>
+    <div class="snapshot-kv"><div class="k">每档提醒数量</div><div class="v">{{ cfg.signal_lots }} <small class="muted">手</small></div><div class="sub">信号不自动修改实际持仓</div></div>
+    <div class="snapshot-kv"><div class="k">本轮买入档位</div><div class="v">{{ strat.buy_count }}</div><div class="sub">每档 {{ cfg.down_step|num }} 点</div></div>
+    <div class="snapshot-kv"><div class="k">本轮卖出档位</div><div class="v">{{ strat.sell_count }}</div><div class="sub">每档 {{ cfg.up_step|num }} 点</div></div>
+    <div class="snapshot-kv"><div class="k">观察基线</div><div class="v small">{{ '等待建立' if strat.needs_baseline else (strat.last_price|num) }}</div><div class="sub">{{ strat.last_quote_at|dt if strat.last_quote_at else '首次报价不补发历史信号' }}</div></div>
+  </div>
+  <div class="notice">{{ source_text(state.last_reason or '尚无策略运行记录。') }}</div>
+  <details class="help-panel" id="strategy-rules"><summary>触发与重启规则</summary><p>买入线为底价、底价减一个间隔、底价减两个间隔……；卖出线为顶价、顶价加一个间隔、顶价加两个间隔……。价格等于线时不触发，只有跨过价格线才触发。</p><p>同一轮同一档只提醒一次；单次行情跳过多档时，记录每档触发。首次启动、改动阶梯参数或恢复观察时，先建立基线，不追发此前穿越。</p><p>当前重启方式：{{ '价格回到起始线的另一侧后，重启该侧阶梯。' if cfg.rearm_mode|default('return') == 'return' else '只通过“重置阶梯”开启新轮次。' }} 仓位只由手动成交改变。</p></details>
+</section>
+<section class="card" id="quote-sources" data-live-section>
+  <div class="section-header"><h2>行情数据源</h2><span class="badge accent">{{ '自动择源' if (cfg.source == 'auto' or (cfg.source == 'inherit' and system.quote_source == 'auto')) else '固定数据源' }}</span></div>
+  <div class="reference-price-grid">
+    {% for quote in quotes %}
+    <article class="reference-price-card {{ 'primary' if quote.selected and quote.fresh else '' }} {{ 'error' if not quote.ok else '' }}">
+      <div class="name"><span>{{ quote.label }}</span>{% if quote.selected and quote.fresh %}<span class="source-chip">当前采用</span>{% elif not quote.ok %}<span class="badge bad">异常</span>{% elif not quote.fresh %}<span class="badge warn">历史报价</span>{% else %}<span class="badge good">可用</span>{% endif %}</div>
+      <div class="price">{{ quote.price|num }}</div>
+      <div class="meta">报价：{{ quote.quote_at|dt if quote.quote_at else '—' }}<br>采集：{{ quote.received_at|dt if quote.received_at else '—' }}{% if quote.error %}<br><span class="warn-text">{{ quote.error }}</span>{% endif %}</div>
+    </article>
+    {% else %}<div class="empty-state span-all">尚无行情记录，等待后台首次采集。</div>{% endfor %}
+  </div>
+  <div class="source-footer"><span>两源分别采集，行情源可在系统页或本标的设置中选择。</span><span>过期报价只展示，不参与策略。</span></div>
+</section>
+
+{% endif %}
