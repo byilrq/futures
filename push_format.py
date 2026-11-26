@@ -7,10 +7,12 @@ appended to that caption. Actual fills and strategy SIGNALS are distinct.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from strategy import decimal_text, decimal_value, unrealized
 from market_data import SOURCE_LABELS, source_options
+from config import SHANGHAI, SYSTEM_DEFAULTS, parse_time, parse_timestamp, session_info
 
 PREFIXES = {
     "signal": "🎯[TRADE]", "manual": "🎯[TRADE]", "trade": "🎯[TRADE]",
@@ -61,7 +63,80 @@ def quote_source(market) -> str:
 
 
 
-def daily_unrealized_line(symbol) -> str:
+def _last_completed_session_close(symbol, at, system):
+    """Find the latest expected trading-window end, including overnight sessions.
+
+    Daily snapshot health is based on the *last completed trading window*, not
+    the real-time quote-max-age used by strategy signals. Calendar dates set
+    in system.closed_dates and weekend rules still apply.
+    """
+    system = {**SYSTEM_DEFAULTS, **(system or {})}
+    cfg = symbol.get("config") or {}
+    contract = symbol.get("contract") or {}
+    day_end = parse_time(system["day_end"])
+    night_start = parse_time(system["night_start"])
+    night_end = parse_time(cfg.get("night_end") if cfg.get("night_end") not in (None, "", "off") else system["night_end"])
+    candidate_ends = []
+    # Plenty for common long weekends; very old stored prices still warn.
+    for offset in range(15):
+        day = at.date() - timedelta(days=offset)
+        candidate_ends.append(datetime.combine(day, day_end, tzinfo=SHANGHAI))
+        for window in str(system.get("breaks") or "").split(","):
+            if "-" in window:
+                candidate_ends.append(datetime.combine(day, parse_time(window.split("-", 1)[0].strip()), tzinfo=SHANGHAI))
+        if system.get("night_enabled") and cfg.get("night_end") != "off" and contract.get("exchange") != "CFFEX":
+            end_date = day + timedelta(days=1) if night_end <= night_start else day
+            candidate_ends.append(datetime.combine(end_date, night_end, tzinfo=SHANGHAI))
+    for close in sorted(set(candidate_ends), reverse=True):
+        if close > at:
+            continue
+        # Probe just before closing so breaks / holidays / weekend nights
+        # cannot be mistaken for completed trading windows.
+        if session_info(system, close - timedelta(seconds=1), cfg, contract)["open"]:
+            return close
+    return None
+
+
+def daily_quote_context(symbol, *, at=None, system=None):
+    """Classify daily reporting separately from real-time strategy freshness.
+
+    'reference': recent end-of-session quote while the market is closed.
+    'missing': missed most recently expected trading window / invalid timestamp.
+    'live': during a trading window, or legacy callers without scheduling data.
+    This classification is presentation-only; it never authorizes trading.
+    """
+    if at is None or system is None:
+        return "live"
+    at = at.astimezone(SHANGHAI)
+    cfg = symbol.get("config") or {}
+    contract = symbol.get("contract") or {}
+    if session_info(system, at, cfg, contract)["open"]:
+        return "live"
+    close = _last_completed_session_close(symbol, at, system)
+    market = (symbol.get("state") or {}).get("market") or {}
+    if close is None or market.get("price") is None or not market.get("quote_at"):
+        return "missing"
+    try:
+        quote_at = parse_timestamp(market["quote_at"])
+        decimal_value(market["price"], "price")
+    except (ValueError, TypeError, ArithmeticError, OverflowError):
+        return "missing"
+    if quote_at > at + timedelta(minutes=1):
+        return "missing"
+    # A 15-minute closing window accommodates minor feed pauses. A bounded
+    # four-hour tolerance applies ONLY to SHFE/INE evening closings, for
+    # contracts whose real night end may be 01:00 or 02:30 despite the default
+    # 23:00 setting. Other windows allow five minutes of timestamp drift.
+    # Never infer an official exchange settlement price from these quotes.
+    late = (timedelta(hours=4) if close.hour >= 21 and contract.get("exchange") in ("SHFE", "INE")
+            else timedelta(minutes=5))
+    if close - timedelta(minutes=15) <= quote_at <= close + late:
+        return "reference"
+    return "missing"
+
+
+
+def daily_unrealized_line(symbol, *, reference=False, missing_session=False) -> str:
     """Match the status page P&L formula using the same stored quote and multiplier.
 
     Realized P&L is maintained by confirmed fills and MUST NOT be overwritten
@@ -97,28 +172,50 @@ def daily_unrealized_line(symbol) -> str:
         "rejected": "按最近未采用报价估算",
         "waiting": "按最近报价估算",
     }.get(status, "按最近报价估算")
+    if reference:
+        note = "按上一交易时段报价估算"
+    elif missing_session:
+        note = "按较早报价估算，请核查"
     if price is None or str(price).strip() == "":
         note = "无持仓"
     return f"💰浮动盈亏: {decimal_text(floating)} 元；总盈亏: {decimal_text(total)} 元（{note}）"
 
 
-def daily_snapshot_body(symbols) -> str:
-    """No execution time in header and no event IDs or last_reason clutter."""
-    chunks = ["🎯每日快照"]
+def daily_snapshot_body(symbols, *, at=None, system=None) -> str:
+    """Daily report: closed-session reference quotes are not live-feed warnings.
+
+    Keep strategy freshness, persisted market status and stored quote unchanged.
+    When called without at/system, preserve the legacy formatting for clients.
+    """
+    chunks = ["\U0001f3af\u6bcf\u65e5\u5feb\u7167"]
     if not symbols:
-        chunks.append("🟡[INFO]暂无监测合约")
+        chunks.append("\U0001f7e1[INFO]\u6682\u65e0\u76d1\u6d4b\u5408\u7ea6")
     for symbol in symbols:
-        state = symbol.get("state", {})
-        market = state.get("market", {})
-        portfolio = state.get("portfolio", {})
+        state = symbol.get("state") or {}
+        market = state.get("market") or {}
+        portfolio = state.get("portfolio") or {}
+        context = daily_quote_context(symbol, at=at, system=system)
+        if context == "reference":
+            heading = f"\U0001f7e2[INFO]\u3010{symbol['name']}\u3011 ({symbol['symbol']})"
+            price_label = "\u53c2\u8003\u4ef7"
+            source_line = f"\U0001f4e1\u6570\u636e: {_SOURCE_NAMES.get(market.get('source'), market.get('source') or '\u6682\u65e0')}\uff08\u4e0a\u4e2a\u4ea4\u6613\u65f6\u6bb5\u53c2\u8003\u62a5\u4ef7\uff09"
+        elif context == "missing":
+            heading = f"\U0001f7e1[WARN]\u3010{symbol['name']}\u3011 ({symbol['symbol']})"
+            price_label = "\u6700\u8fd1\u4ef7"
+            source_line = f"\U0001f4e1\u6570\u636e: {_SOURCE_NAMES.get(market.get('source'), market.get('source') or '\u6682\u65e0')}\uff08\u6700\u8fd1\u4ea4\u6613\u65f6\u6bb5\u62a5\u4ef7\u7f3a\u5931\u6216\u65f6\u95f4\u65e0\u6548\uff09"
+        else:
+            heading = label(symbol)
+            price_label = "\u5f53\u524d"
+            source_line = quote_source(market)
+        time_label = "\u62a5\u4ef7\u65f6\u95f4" if context != "live" else "\u65f6\u95f4"
         chunks.append("\n" + "\n".join([
-            label(symbol),
-            f"🕒时间: {compact_time(market.get('quote_at'))}",
-            f"💲当前: {market.get('price') or '暂无'}",
-            (f"⚖️持仓: 多 {portfolio.get('long_lots', 0)} 手 / 空 {portfolio.get('short_lots', 0)} 手，"
-             f"已实现盈亏 {portfolio.get('realized_pnl', '0')} 元"),
-            daily_unrealized_line(symbol),
-            quote_source(market),
+            heading,
+            f"\U0001f552{time_label}: {compact_time(market.get('quote_at'))}",
+            f"\U0001f4b2{price_label}: {market.get('price') if market.get('price') is not None else '\u6682\u65e0'}",
+            (f"\u2696\ufe0f\u6301\u4ed3: \u591a {portfolio.get('long_lots', 0)} \u624b / \u7a7a {portfolio.get('short_lots', 0)} \u624b\uff0c"
+             f"\u5df2\u5b9e\u73b0\u76c8\u4e8f {portfolio.get('realized_pnl', '0')} \u5143"),
+            daily_unrealized_line(symbol, reference=context == "reference", missing_session=context == "missing"),
+            source_line,
         ]))
     return "\n".join(chunks)
 

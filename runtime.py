@@ -298,7 +298,7 @@ def perform_schedules(store, at=None):
             # Daily notification continues, but no daily rollback frames.
             # Only the body carries the caption; no ntfy title header, no
             # duplicated timestamp beside the caption or per-message suffix.
-            store.enqueue(con, f"daily_{day}", "", daily_snapshot_body(symbols), "daily")
+            store.enqueue(con, f"daily_{day}", "", daily_snapshot_body(symbols, at=at, system=cfg), "daily")
             store.set_meta(con, "daily_snapshot_day", day)
         if cfg["backup_enabled"] and hm >= cfg["backup_time"] and store.meta(con, "backup_queued_day") != day:
             con.execute("INSERT INTO jobs(kind,time) VALUES('backup',?)", (stamp(at),))
