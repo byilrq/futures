@@ -159,7 +159,7 @@ class QuoteParsingTests(unittest.TestCase):
             if "push2.eastmoney.com" in url:
                 raise urllib.error.URLError("SSL handshake timed out")
             return payload
-        with patch("market_data._http_bytes", side_effect=download):
+        with patch("market_sources._http_bytes", side_effect=download):
             quote = fetch_eastmoney(contract, timeout=3)
         self.assertTrue(quote["ok"])
         self.assertEqual(quote["endpoint"], "push2delay.eastmoney.com")
@@ -169,7 +169,7 @@ class QuoteParsingTests(unittest.TestCase):
 
     def test_eastmoney_fallback_preserves_failure_not_fake_quote(self):
         contract = normalize_contract("m2709")
-        with patch("market_data._http_bytes", side_effect=TimeoutError("SSL timeout")) as mocked:
+        with patch("market_sources._http_bytes", side_effect=TimeoutError("SSL timeout")) as mocked:
             with self.assertRaisesRegex(QuoteError, "备用接口也不可用"):
                 fetch_eastmoney(contract, timeout=2)
         self.assertEqual(mocked.call_count, 2)
@@ -177,15 +177,18 @@ class QuoteParsingTests(unittest.TestCase):
     def test_one_failed_source_cannot_erase_other_source(self):
         c = normalize_contract("m2709")
         good = parse_eastmoney(fixture_json("eastmoney_m2709.json"), c)
-        with patch("market_data.fetch_sina", side_effect=urllib.error.URLError("offline")), \
-                patch("market_data.fetch_eastmoney", return_value=good):
+        from market_sources import SOURCE_FETCHERS
+        with patch.dict(SOURCE_FETCHERS, {"sina": lambda *_a, **_k: (_ for _ in ()).throw(urllib.error.URLError("offline")),
+                                          "emfutures": lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError("temporarily unavailable")),
+                                          "eastmoney": lambda *_a, **_k: good}):
             result = collect_quotes(c, timeout=1)
-        self.assertEqual([x["source"] for x in result], ["sina", "eastmoney"])
+        self.assertEqual([x["source"] for x in result], ["sina", "emfutures", "eastmoney"])
         self.assertFalse(result[0]["ok"])
         self.assertIsNone(result[0]["price"])
         self.assertIn("offline", result[0]["error"])
-        self.assertTrue(result[1]["ok"])
-        self.assertEqual(result[1]["price"], 2904)
+        self.assertFalse(result[1]["ok"])  # 东财专线失败，但其优先级仍为第二
+        self.assertTrue(result[2]["ok"])
+        self.assertEqual(result[2]["price"], 2904)
 
 
 class HistoricalDataTests(unittest.TestCase):

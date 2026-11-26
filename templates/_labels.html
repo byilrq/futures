@@ -2,5 +2,12 @@
 {{ {'created':'初始状态','config':'配置变更','before_config':'参数修改前','manual':'手动成交','manual_trade':'手动成交','trade':'手动成交','before_trade':'手动成交前','before_signal':'策略触发前','signal':'策略信号','quote':'行情','market':'行情','daily':'每日快照','monitor':'价格监控','rollback':'状态回滚','before_rollback':'回滚前','reset':'重置阶梯','before_reset':'重置前','archive':'归档','settings':'系统设置'}.get(kind,kind) }}
 {%- endmacro %}
 {% macro source_text(value) -%}
-{{ (value or '')|replace('行情源切换为 sina','行情源切换为新浪期货')|replace('行情源切换为 eastmoney','行情源切换为东方财富')|replace('行情源 sina','行情源 新浪期货')|replace('行情源 eastmoney','行情源 东方财富')|replace('行情源：sina','行情源：新浪期货')|replace('行情源：eastmoney','行情源：东方财富') }}
+{%- set converted = namespace(text=value or '') -%}
+{%- for key, name in source_options -%}
+  {%- set converted.text = converted.text
+     | replace('行情源切换为 ' ~ key, '行情源切换为 ' ~ name)
+     | replace('行情源 ' ~ key, '行情源 ' ~ name)
+     | replace('行情源：' ~ key, '行情源：' ~ name) -%}
+{%- endfor -%}
+{{ converted.text }}
 {%- endmacro %}

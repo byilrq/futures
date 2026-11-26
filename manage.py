@@ -562,7 +562,7 @@ def main(argv=None):
         status.add_argument("--json", action="store_true")
     config = commands.add_parser("config", help="读取脱敏配置")
     config.add_argument("--field", help="读取公开字段，例如 web.port、auth.configured")
-    quote = commands.add_parser("quote", help="独立检测两个行情源，不运行策略也不推送")
+    quote = commands.add_parser("quote", help="独立检测三个行情采集通道，不运行策略也不推送")
     quote.add_argument("symbol", help="具体交割月合约，例如 m2709")
     quote.add_argument("--exchange")
     quote.add_argument("--timeout", type=float, default=8)

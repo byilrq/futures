@@ -136,3 +136,29 @@ body.futures-modal-open{overflow:hidden}
 @media(max-width:360px){
   .symbol-switcher-actions .secondary-btn,.symbol-switcher-actions .danger-btn{padding:7px 8px;font-size:11px}
 }
+
+
+/* Three quote cards stay on ONE row on desktop and narrow phone screens. */
+#quote-sources .reference-price-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#quote-sources .reference-price-card{min-width:0;padding:13px 12px;overflow:hidden}
+#quote-sources .reference-price-card .name{min-width:0;flex-wrap:wrap;gap:5px;align-items:center;justify-content:flex-start}
+#quote-sources .reference-price-card .name>span:first-child{overflow-wrap:anywhere}
+#quote-sources .reference-price-card .name>.badge,#quote-sources .reference-price-card .source-chip{font-size:10px;white-space:nowrap}
+#quote-sources .reference-price-card .price{font-size:clamp(15px,2.3vw,27px);overflow-wrap:anywhere;line-height:1.25}
+#quote-sources .reference-price-card .meta{font-size:10px;line-height:1.55;overflow-wrap:anywhere}
+#quote-sources .q-time-mobile{display:none}
+#quote-sources .source-error{margin-top:6px;overflow-wrap:anywhere}
+#quote-sources .source-error summary{cursor:pointer;color:var(--bad);font-size:10px;line-height:1.4}
+#quote-sources .source-error .warn-text{display:block;line-height:1.4;margin-top:4px}
+@media(max-width:640px){
+  #quote-sources .reference-price-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  #quote-sources .reference-price-card{padding:9px 6px;border-radius:10px}
+  #quote-sources .reference-price-card .name{display:flex;flex-direction:column;align-items:flex-start;gap:3px;font-size:clamp(9px,2.7vw,11px);line-height:1.25}
+  #quote-sources .reference-price-card .name>.badge,#quote-sources .reference-price-card .source-chip{font-size:9px;padding:2px 4px}
+  #quote-sources .reference-price-card .price{font-size:clamp(12px,4vw,18px);margin-top:6px;letter-spacing:-.4px}
+  #quote-sources .reference-price-card .meta{font-size:9px;line-height:1.35;margin-top:5px}
+  #quote-sources .q-time-desktop{display:none}
+  #quote-sources .q-time-mobile{display:inline}
+  #quote-sources .source-error summary{font-size:9px}
+}
+@media(max-width:360px){#quote-sources .reference-price-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}#quote-sources .reference-price-card{padding:8px 5px}}

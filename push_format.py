@@ -10,14 +10,16 @@ import re
 from decimal import Decimal
 
 from strategy import decimal_text, decimal_value, unrealized
+from market_data import SOURCE_LABELS, source_options
 
 PREFIXES = {
     "signal": "🎯[TRADE]", "manual": "🎯[TRADE]", "trade": "🎯[TRADE]",
     "monitor": "🏹[MONI]", "daily": "🎯", "settings": "🟡[WARN]",
     "test": "🟢[INFO]", "backup": "📦[BACKUP]",
+    "source_failure": "🔴[ERROR]",
 }
 _EMOJI = re.compile(r"^[\u2600-\u27bf\U0001f000-\U0001ffff]")
-_SOURCE_NAMES = {"sina": "新浪期货", "eastmoney": "东方财富"}
+_SOURCE_NAMES = SOURCE_LABELS
 _STATUS_NAMES = {
     "ok": "OK", "closed": "休市", "stale": "报价过期",
     "waiting": "等待行情", "error": "异常", "rejected": "行情拒绝",
@@ -152,6 +154,25 @@ def signal_trade_body(symbol, signals, market, next_buy=None, next_sell=None) ->
     return "\n".join(lines)
 
 
+def source_failure_body(symbol, quotes, at) -> str:
+    """One compact per-contract critical notice, without leaking full URLs."""
+    sources = source_options()
+    by_source = {q.get("source"): q for q in quotes}
+    lines = [
+        f"🔴[ERROR]【{symbol['name']}】 ({symbol['symbol']})",
+        f"🕒时间: {compact_time(at)}",
+        "🚨状态: 3 个行情采集通道全部失效，暂停本轮买卖信号",
+        "📡数据: " + " / ".join(label for _, label in sources),
+    ]
+    for code, label_name in sources:
+        item = by_source.get(code, {})
+        reason = str(item.get("error") or ("报价时间无效" if item.get("ok") else "未获得有效报价"))
+        reason = re.sub(r"[\r\n\t]+", " ", reason).strip()[:90]
+        lines.append(f"⚠️{label_name}: {reason}")
+    lines.append("🔔消息等级: 4（仅故障首次发生时告警，恢复后重新计次）")
+    return "\n".join(lines)
+
+
 def _icon(line: str) -> str:
     text = line.strip()
     if not text: return ""
@@ -176,7 +197,7 @@ def quant_style_message(title: str, body: str, kind: str) -> str:
     raw = str(body).strip()
     if kind == "daily" and raw.startswith("🎯每日快照"):
         return raw
-    if kind in ("signal", "manual", "trade") and re.match(r"^[🟢🟡🔴]\[(?:TRADE|INFO|WARN|ERROR)\]【", raw):
+    if kind in ("signal", "manual", "trade", "source_failure") and re.match(r"^[🟢🟡🔴]\[(?:TRADE|INFO|WARN|ERROR)\]【", raw):
         return raw
     lines = [line.strip() for line in str(body).splitlines() if line.strip()]
     if not lines:

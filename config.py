@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, time
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from market_data import SOURCE_ORDER
+
 APP_NAME = "闲云期货"
 SCHEMA_VERSION = 1
 APPLICATION_ID = 1179997266  # FUTR
@@ -107,7 +109,7 @@ def validate_system(values):
             raise ValueError("休息时段开始必须早于结束")
         cleaned.append(f"{start}-{end}")
     cfg["breaks"] = ",".join(cleaned)
-    if cfg["quote_source"] not in {"auto", "sina", "eastmoney"}:
+    if cfg["quote_source"] not in ("auto", *SOURCE_ORDER):
         raise ValueError("请选择有效的行情源")
     try:
         ZoneInfo(str(cfg["timezone"]))

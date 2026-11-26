@@ -35,11 +35,11 @@
     <article class="reference-price-card {{ 'primary' if quote.selected and quote.fresh else '' }} {{ 'error' if not quote.ok else '' }}">
       <div class="name"><span>{{ quote.label }}</span>{% if quote.selected and quote.fresh %}<span class="source-chip">当前采用</span>{% elif not quote.ok %}<span class="badge bad">异常</span>{% elif not quote.fresh %}<span class="badge warn">历史报价</span>{% else %}<span class="badge good">可用</span>{% endif %}</div>
       <div class="price">{{ quote.price|num }}</div>
-      <div class="meta">报价：{{ quote.quote_at|dt if quote.quote_at else '—' }}<br>采集：{{ quote.received_at|dt if quote.received_at else '—' }}{% if quote.error %}<br><span class="warn-text">{{ quote.error }}</span>{% endif %}</div>
+      <div class="meta"><span class="q-time-desktop">报价：{{ quote.quote_at|dt if quote.quote_at else '—' }}</span><span class="q-time-mobile" title="{{ quote.quote_at or '—' }}">报价：{{ quote.quote_at[5:16]|replace('-', '.')|replace('T',' ') if quote.quote_at else '—' }}</span><br><span class="q-time-desktop">采集：{{ quote.received_at|dt if quote.received_at else '—' }}</span><span class="q-time-mobile" title="{{ quote.received_at or '—' }}">采集：{{ quote.received_at[5:16]|replace('-', '.')|replace('T',' ') if quote.received_at else '—' }}</span>{% if quote.error %}<details class="source-error"><summary>错误详情</summary><span class="warn-text">{{ quote.error }}</span></details>{% endif %}</div>
     </article>
     {% else %}<div class="empty-state span-all">尚无行情记录，等待后台首次采集。</div>{% endfor %}
   </div>
-  <div class="source-footer"><span>两源分别采集，行情源可在系统页或本标的设置中选择。</span><span>过期报价只展示，不参与策略。</span></div>
+  <div class="source-footer"><span>{{ source_options|length }}路采集 · {{ source_provider_count }}个服务商；可在系统页或标的设置中指定采用哪路。</span></div>
 </section>
 
 {% endif %}

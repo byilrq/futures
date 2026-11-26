@@ -6,6 +6,7 @@ import sqlite3
 import uuid
 from decimal import Decimal, InvalidOperation
 
+from market_data import SOURCE_ORDER
 from config import as_bool, default_symbol_config, parse_time, stamp
 from storage import Store, dumps, loads
 from push_format import manual_trade_body
@@ -39,7 +40,7 @@ def validate_symbol(values, previous=None):
     # Compatibility field only: all contracts obey the single system master switch.
     cfg["enabled"] = True
     cfg["source"] = str(cfg.get("source", "inherit"))
-    if cfg["source"] not in {"inherit", "auto", "sina", "eastmoney"}:
+    if cfg["source"] not in ("inherit", "auto", *SOURCE_ORDER):
         raise ValueError("无效的标的行情源")
     cfg["night_end"] = str(cfg.get("night_end", "")).strip()
     if cfg["night_end"] and cfg["night_end"] != "off":
@@ -142,6 +143,9 @@ def save_config(store, symbol_id, values, revision):
         if reset or cfg["source"] != old["source"]:
             symbol["state"]["strategy"]["needs_baseline"] = True
             symbol["state"]["monitor"]["anchor"] = None
+        if cfg["source"] != old["source"]:
+            # An explicit operator source change starts a new sticky route.
+            symbol["state"].pop("source_route", None)
         if cfg["monitor_step"] != old["monitor_step"]:
             symbol["state"]["monitor"]["anchor"] = None
         symbol["config"] = cfg
@@ -232,8 +236,18 @@ def rollback(store, symbol_id, snapshot_id, revision, request_id):
         # Keep current price bands, source, multiplier etc. even if a stored
         # checkpoint was created under another configuration.
         current_config = copy.deepcopy(symbol["config"])
+        current_routing = copy.deepcopy(symbol["state"].get("source_route"))
+        current_outage = copy.deepcopy(symbol["state"].get("source_outage"))
         checkpoint_config = loads(row["config_json"], {})
         symbol["state"] = loads(row["state_json"])
+        # Rolling back a trade never rewinds operational source failover or
+        # its one-alert-per-outage latch; those are unrelated to positions.
+        if current_routing is not None:
+            symbol["state"]["source_route"] = current_routing
+        if current_outage is not None:
+            symbol["state"]["source_outage"] = current_outage
+        else:
+            symbol["state"].pop("source_outage", None)
         voided = set(symbol["state"].pop("_ledger_voided_ids", []))
         symbol["state"]["market"] = market
         if checkpoint_config != current_config:

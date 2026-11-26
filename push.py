@@ -106,6 +106,12 @@ def drain_outbox(store, limit=8, sender=send_message):
                 break
             item = dict(row)
             cfg = {**PUSH_DEFAULTS, **store.setting(con, "push", {})}
+            if item["kind"] == "source_failure":
+                # Provider-outage warnings have fixed severity 4, regardless
+                # of the user's general message priority setting. The global
+                # push enable/disable control is still respected below.
+                cfg["NTFY_PRIORITY"] = "4"
+                cfg["GOTIFY_PRIORITY"] = "4"
             if cfg["PUSH_ENABLED"] != "yes" and not item["force"]:
                 con.execute("UPDATE outbox SET status='disabled',detail='触发时推送总开关关闭，记录保留，不在之后补发' WHERE id=?", (item["id"],))
                 store.prune_outbox(con)

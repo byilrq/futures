@@ -100,15 +100,18 @@ class RuntimeIntegrationTests(unittest.TestCase):
         later = self.process("2799", 2, source="eastmoney")
         self.assertEqual([x["level"] for x in later["signals"]], ["2800"])
 
-    def test_fixed_source_never_silently_uses_other_provider(self):
+    def test_fixed_source_is_priority_but_fails_over_when_offline(self):
         with self.store.tx() as con:
             system = self.store.setting(con, "system")
             system["quote_source"] = "sina"
             self.store.set_setting(con, "system", system)
         result = self.process("3100", source="eastmoney")
         self.assertEqual(result["signals"], [])
-        self.assertEqual(self.symbol()["last_quote_epoch"], 0)
-        self.assertEqual(self.count("price_history"), 0)
+        # User preference is honoured until it fails; then fallback to the
+        # next healthy source is persisted, rather than stopping altogether.
+        self.assertNotEqual(self.symbol()["last_quote_epoch"], 0)
+        self.assertEqual(self.count("price_history"), 1)
+        self.assertEqual(self.symbol()["state"]["source_route"]["active"], "eastmoney")
 
     def test_simultaneous_source_disagreement_does_not_mutate_ladder(self):
         first = self.symbol()["state"]["strategy"]

@@ -23,6 +23,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
 from werkzeug.security import check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from nginx_proxy import proxy_state
+from market_data import SOURCE_ORDER, SOURCE_LABELS, source_options, source_provider_count
 
 from config import (APP_NAME, BASE_DIR, SYSTEM_DEFAULTS, PUSH_DEFAULTS, backup_display_state,
                     as_bool, now_shanghai, parse_timestamp, session_info, stamp,
@@ -61,7 +62,17 @@ def create_app(root=None):
             session["csrf"] = secrets.token_urlsafe(32)
         return session["csrf"]
 
-    app.jinja_env.globals.update(csrf_token=csrf_token, request_id=lambda: uuid.uuid4().hex)
+    app.jinja_env.globals.update(csrf_token=csrf_token, request_id=lambda: uuid.uuid4().hex,
+                                 source_options=source_options(),
+                                 source_provider_count=source_provider_count())
+
+    @app.template_filter("source_text")
+    def source_text(value):
+        text = str(value or "")
+        for source, name in source_options():
+            for marker in ("行情源切换为 ", "行情源 ", "行情源："):
+                text = text.replace(marker + source, marker + name)
+        return text
 
     @app.template_filter("num")
     def num(value):
@@ -185,16 +196,24 @@ def create_app(root=None):
                 quotes = [loads(r[0]) for r in con.execute("SELECT payload FROM source_quotes WHERE symbol_id=? ORDER BY source DESC", (selected["id"],))]
                 snapshots = store.snapshot_rows(con, selected["id"], limit=20)
                 events = store.strategy_event_rows(con, selected["id"], limit=20)
-            for source, label in (("sina", "新浪期货"), ("eastmoney", "东方财富")):
+            for source, label in source_options():
                 if not any(q["source"] == source for q in quotes):
                     quotes.append(dict(source=source, label=label, price=None, quote_at=None, received_at=None, ok=False, fresh=False, selected=False, error="等待后台采集"))
+            # Stable source ordering independent of DB PK/source lexical order.
+            quote_order = {source_id: index for index, source_id in enumerate(SOURCE_ORDER)}
+            quotes = [q for q in quotes if q.get("source") in quote_order]
+            quotes.sort(key=lambda q: quote_order[q["source"]])
             # Recompute freshness on read: a stopped worker cannot leave a green old card.
             current_time = now_shanghai()
             for q in quotes:
+                # Re-label persisted quotes using the current provider registry.
+                # Replacing market_sources.py must not leave stale vendor names.
+                q["label"] = SOURCE_LABELS.get(q.get("source"), q.get("label") or "未知来源")
                 try:
                     q["fresh"] = q.get("ok", False) and -15 <= (current_time - parse_timestamp(q.get("quote_at"))).total_seconds() <= system["quote_max_age"]
                     if q.get("ok") and not q["fresh"]:
-                        q["error"] = "报价已过期，仅供查看"
+                        # The historic-quote badge conveys this; no repetitive warning.
+                        q["error"] = ""
                 except ValueError:
                     q["fresh"] = False
             current = selected["state"]["market"].get("price") if selected else None
@@ -203,7 +222,9 @@ def create_app(root=None):
                     age = (current_time - parse_timestamp(selected["state"]["market"]["quote_at"])).total_seconds()
                     if age > system["quote_max_age"] or age < -15:
                         selected["state"]["market"]["status"] = "stale"
-                        selected["state"]["market"]["error"] = "报价已过期，仅供查看"
+                        selected["state"]["market"]["error"] = ""
+                        if selected["state"].get("last_reason") == "报价已过期，仅供查看":
+                            selected["state"]["last_reason"] = "等待有效行情"
                 except ValueError:
                     selected["state"]["market"]["status"] = "error"
             if heartbeat.get("time"):

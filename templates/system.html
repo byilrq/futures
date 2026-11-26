@@ -25,11 +25,11 @@
 <form method="post" action="{{ url_for('save_system') }}" id="system-settings" data-async>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <section class="card">
-    <div class="section-header"><h2>行情源设置</h2><span class="badge">两源独立采集</span></div>
+    <div class="section-header"><h2>行情源设置</h2><span class="badge">三路独立采集</span></div>
     <div class="form-grid three-col">
-      <div class="field-block"><label for="quote-source">默认行情源</label><select id="quote-source" name="quote_source">{% for key,label in [('auto','自动择源'),('sina','新浪期货'),('eastmoney','东方财富')] %}<option value="{{ key }}" {% if system.quote_source == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="field-help">各标的可单独覆盖系统选择。</p></div>
+      <div class="field-block"><label for="quote-source">默认行情源</label><select id="quote-source" name="quote_source">{% for key,label in [('auto','自动择源')] + source_options %}<option value="{{ key }}" {% if system.quote_source == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="field-help">各标的可单独覆盖系统选择。</p></div>
       <div class="field-block"><label for="quote-max-age">报价有效期（秒）</label><input id="quote-max-age" name="quote_max_age" type="number" min="30" max="1800" step="1" value="{{ system.quote_max_age }}" required><p class="field-help">超过有效期的报价只展示。</p></div>
-      <div class="field-block"><label for="source-spread-ticks">两源价差阈值（跳）</label><input id="source-spread-ticks" name="source_spread_ticks" type="number" min="1" max="10000" step="1" value="{{ system.source_spread_ticks }}" required><p class="field-help">1 跳等于本合约最小变动价位。</p></div>
+      <div class="field-block"><label for="source-spread-ticks">多源价差阈值（跳）</label><input id="source-spread-ticks" name="source_spread_ticks" type="number" min="1" max="10000" step="1" value="{{ system.source_spread_ticks }}" required><p class="field-help">1 跳等于本合约最小变动价位。</p></div>
     </div>
   </section>
   <section class="card" id="runtime-settings">

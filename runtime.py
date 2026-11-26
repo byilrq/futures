@@ -13,14 +13,33 @@ from datetime import timedelta
 from decimal import Decimal
 
 from config import BASE_DIR, SYSTEM_DEFAULTS, now_shanghai, parse_timestamp, session_info, stamp
-from market_data import collect_quotes
+from market_data import SOURCE_LABELS, SOURCE_ORDER, collect_quotes
 from storage import Store, dumps, loads
 from strategy import evaluate
 from service import is_configured
 from push import drain_outbox, recover_inflight
-from push_format import daily_snapshot_body, signal_trade_body
+from push_format import daily_snapshot_body, signal_trade_body, source_failure_body
 
 LOG = logging.getLogger("futures")
+def source_routing(state, system, cfg):
+    """Read the persisted per-contract route; fallbacks survive worker restarts.
+
+    Changing the system preference (for inherited contracts) or the contract's
+    own preference intentionally resets the route. Upgrading an old database
+    retains its last successfully selected source in automatic mode.
+    """
+    setting = cfg.get("source", "inherit")
+    preference = system.get("quote_source", "auto") if setting == "inherit" else setting
+    policy = f"{setting}|{system.get('quote_source', 'auto') if setting == 'inherit' else ''}"
+    previous = state.get("source_route")
+    if isinstance(previous, dict) and previous.get("policy") == policy and previous.get("active") in SOURCE_ORDER:
+        return policy, previous["active"]
+    if preference in SOURCE_ORDER:
+        return policy, preference
+    for candidate in (state.get("strategy", {}).get("last_source"), state.get("market", {}).get("source")):
+        if candidate in SOURCE_ORDER:
+            return policy, candidate
+    return policy, SOURCE_ORDER[0]
 
 
 def decorate_quotes(quotes, system, at):
@@ -50,29 +69,34 @@ def decorate_quotes(quotes, system, at):
     return decorated
 
 
-def choose_quote(quotes, system, cfg):
+def choose_quote(quotes, system, cfg, *, active_source=None):
+    """Sticky failover across all three channels, regardless of initial source.
+
+    A fixed source is the starting *preference*, not a single point of failure.
+    If healthy, the active source remains selected even when another source
+    recovers or publishes a newer tick. Concurrent large price disagreements
+    still halt strategy decisions; two Eastmoney channels are not 2 votes.
+    """
     source = cfg.get("source", "inherit")
     source = system["quote_source"] if source == "inherit" else source
     usable = [q for q in quotes if q.get("ok") and q.get("fresh")]
-    if source != "auto":
-        chosen = next((q for q in usable if q["source"] == source), None)
-        return chosen, "" if chosen else "指定行情源暂不可用/报价过期；未切换其他源"
-    if len(usable) > 1:
-        # Compare only similarly timed prices; older quotes cannot veto a fresh one.
-        a, b = usable[:2]
-        if abs(a["epoch"] - b["epoch"]) <= 10:
-            limit = Decimal(str(cfg["tick_size"])) * system["source_spread_ticks"]
-            if abs(Decimal(a["price"]) - Decimal(b["price"])) > limit:
-                return None, "两源同时刻价差超过设定上限，暂停本轮判断"
     if not usable:
-        return None, "两路行情暂不可用或已过期"
-    # Sina primary; materially newer Eastmoney takes over. Source changes rebaseline.
-    usable.sort(key=lambda q: (q["epoch"], q["source"] == "sina"), reverse=True)
-    newest = usable[0]
-    primary = next((q for q in usable if q["source"] == "sina"), None)
-    if primary and newest["epoch"] - primary["epoch"] <= 5:
-        return primary, ""
-    return newest, ""
+        return None, "三路行情暂不可用或报价时间已失效"
+    if len(usable) > 1:
+        limit = Decimal(str(cfg["tick_size"])) * system["source_spread_ticks"]
+        for i, a in enumerate(usable):
+            for b in usable[i + 1:]:
+                if abs(a["epoch"] - b["epoch"]) <= 10:
+                    if abs(Decimal(str(a["price"])) - Decimal(str(b["price"]))) > limit:
+                        return None, "多源同期报价价差超过设定上限，暂停本轮策略判断"
+    current = active_source if active_source in SOURCE_ORDER else (source if source in SOURCE_ORDER else SOURCE_ORDER[0])
+    start = SOURCE_ORDER.index(current)
+    for index in range(len(SOURCE_ORDER)):
+        next_source = SOURCE_ORDER[(start + index) % len(SOURCE_ORDER)]
+        chosen = next((q for q in usable if q["source"] == next_source), None)
+        if chosen is not None:
+            return chosen, ""
+    return None, "三路行情没有可识别的有效合约报价"
 
 
 def process_quotes(store, symbol_id, raw_quotes, at=None):
@@ -83,14 +107,32 @@ def process_quotes(store, symbol_id, raw_quotes, at=None):
         system = {**SYSTEM_DEFAULTS, **store.setting(con, "system", {})}
         cfg, state = symbol["config"], symbol["state"]
         before_signal_state = copy.deepcopy(symbol)
+        routing_policy, active_source = source_routing(state, system, cfg)
+        state["source_route"] = {"policy": routing_policy, "active": active_source}
         quotes = decorate_quotes(raw_quotes, system, at)
         # Wrong-contract responses never reach either the display price or strategy.
         for q in quotes:
             if str(q.get("symbol", "")).lower() != symbol["symbol"].lower():
                 q.update(ok=False, fresh=False, error="行情合约与所监测合约不一致")
-        chosen, error = choose_quote(quotes, system, cfg)
+        chosen, error = choose_quote(quotes, system, cfg, active_source=active_source)
         info = session_info(system, at, cfg, symbol["contract"])
         active = bool(system["strategy_enabled"] and is_configured(cfg))
+        has_fresh = any(q.get("ok") and q.get("fresh") for q in quotes)
+        if has_fresh:
+            # Only a new outage episode may send another all-source alert.
+            state.pop("source_outage", None)
+        elif info["open"] and not state.get("source_outage", {}).get("active"):
+            event_id = uuid.uuid4().hex
+            body = source_failure_body(symbol, quotes, stamp(at))
+            store.event(con, event_id, symbol_id, "source_failure", "三路行情源失效", body, at=stamp(at))
+            store.enqueue(con, event_id, f"三路行情失效 · {symbol['name']}", body, "source_failure", symbol_id)
+            state["source_outage"] = {"active": True, "since": stamp(at), "event_id": event_id}
+            LOG.warning("合约 %s 三路行情全部失效，已排入单次等级 4 告警", symbol["symbol"])
+        if chosen is not None:
+            state["source_route"]["active"] = chosen["source"]
+            if active_source != chosen["source"]:
+                LOG.info("合约 %s 行情源自动切换 %s -> %s，并保存路由", symbol["symbol"],
+                         SOURCE_LABELS.get(active_source, active_source), SOURCE_LABELS.get(chosen["source"], chosen["source"]))
         if not active:
             state["strategy"]["needs_baseline"] = True
             state["monitor"]["anchor"] = None
@@ -212,7 +254,11 @@ def refresh_quote_display(store, symbol_id, raw_quotes, at=None):
         for quote in quotes:
             if str(quote.get("symbol", "")).lower() != symbol["symbol"].lower():
                 quote.update(ok=False, fresh=False, error="行情合约与所监测合约不一致")
-        chosen, error = choose_quote(quotes, system, symbol["config"])
+        routing_policy, active_source = source_routing(symbol["state"], system, symbol["config"])
+        chosen, error = choose_quote(quotes, system, symbol["config"], active_source=active_source)
+        symbol["state"]["source_route"] = {
+            "policy": routing_policy, "active": chosen["source"] if chosen else active_source,
+        }
         for quote in quotes:
             quote["selected"] = bool(chosen and quote["source"] == chosen["source"])
             con.execute("INSERT INTO source_quotes VALUES(?,?,?,?) "
